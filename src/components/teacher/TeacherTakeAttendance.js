@@ -1,0 +1,372 @@
+'use client';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import api from '@/utils/api';
+import Icon from '@/components/common/Icon';
+import toast from 'react-hot-toast';
+
+export default function TeacherTakeAttendance() {
+  const [subjects, setSubjects] = useState([]);
+  const [selectedSubject, setSelectedSubject] = useState(null);
+  const [students, setStudents] = useState([]);
+  const [attendance, setAttendance] = useState({});
+  const [session, setSession] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [step, setStep] = useState('select'); // select | mark | done
+  const [search, setSearch] = useState('');
+  const touchedRef = useRef(new Set());
+
+  useEffect(() => {
+    api.get('/subjects').then(r => setSubjects(r.data.subjects || [])).finally(() => setLoading(false));
+    // Check for any active session
+    api.get('/sessions?status=active').then(r => {
+      if (r.data.sessions?.length > 0) {
+        const active = r.data.sessions[0];
+        setSession(active);
+        // Set selectedSubject from session data so 'done' step shows correct subject name
+        if (active.subjectId) {
+          setSelectedSubject(active.subjectId);
+        }
+        // Load students for this session
+        loadStudentsForSession(active);
+        setStep('mark');
+      }
+    }).catch(() => { });
+  }, []);
+
+  const loadStudentsForSession = async (sess) => {
+    try {
+      const params = {
+        role: 'student',
+        departmentId: sess.departmentId?._id || sess.departmentId,
+        semester: sess.semester,
+        section: sess.section
+      };
+      // session-এ shift থাকলে সেই shift-এর students আনো
+      if (sess.shift) params.shift = sess.shift;
+
+      const res = await api.get('/users', { params });
+      const stds = res.data.users || [];
+      setStudents(stds);
+      // Load existing attendance
+      const attRes = await api.get(`/attendance/session/${sess._id}`);
+      const existing = {};
+      (attRes.data.attendance || []).forEach(a => { if (a?.studentId?._id) existing[a.studentId._id] = a.status; });
+      // Default remaining to 'absent' — teacher (or the student themself via
+      // self-check-in) has to actively mark someone present.
+      const attMap = {};
+      stds.forEach(s => { attMap[s._id] = existing[s._id] || 'absent'; });
+      setAttendance(attMap);
+      touchedRef.current = new Set();
+    } catch (e) { console.error(e); toast.error('Students লোড করতে সমস্যা হয়েছে'); }
+  };
+
+  // Background poll while marking: pulls the latest attendance from the
+  // server (picks up students who self-check-in from their own dashboard)
+  // and merges it in — but only for students the teacher hasn't touched
+  // themselves yet, so it never overwrites an in-progress manual edit.
+  const refreshFromServer = useCallback(async (sessionId) => {
+    try {
+      const attRes = await api.get(`/attendance/session/${sessionId}`);
+      const existing = {};
+      (attRes.data.attendance || []).forEach(a => { if (a?.studentId?._id) existing[a.studentId._id] = a.status; });
+      setAttendance(prev => {
+        const next = { ...prev };
+        Object.keys(existing).forEach(studentId => {
+          if (!touchedRef.current.has(studentId)) {
+            next[studentId] = existing[studentId];
+          }
+        });
+        return next;
+      });
+    } catch (e) {
+      // silent — background poll, don't interrupt the teacher with errors
+    }
+  }, []);
+
+  useEffect(() => {
+    if (step !== 'mark' || !session?._id) return;
+    const interval = setInterval(() => {
+      refreshFromServer(session._id);
+    }, 4000);
+    return () => clearInterval(interval);
+  }, [step, session?._id, refreshFromServer]);
+
+  const startSession = async (subject) => {
+    // Guard: a subject whose Department reference is missing/broken used to send
+    // departmentId: null to the server and crash the whole attendance flow later.
+    // Catch it here with a clear, actionable message instead.
+    if (!subject?.departmentId) {
+      toast.error('এই subject-এর Department সেট নেই। "Subjects" পেজ থেকে এটি Edit করে Department দিন।');
+      return;
+    }
+    setSelectedSubject(subject);
+    setSaving(true);
+    try {
+      const res = await api.post('/sessions', {
+        subjectId: subject._id,
+        semester: subject.semester,
+        section: subject.section
+      });
+      const sess = res.data.session;
+      setSession(sess);
+      await loadStudentsForSession(sess);
+      setStep('mark');
+      toast.success(`Session শুরু হয়েছে: ${subject.name}`);
+    } catch (err) { toast.error(err.response?.data?.message || 'Session শুরু করতে সমস্যা'); }
+    finally { setSaving(false); }
+  };
+
+  const toggleStudent = (studentId) => {
+    touchedRef.current.add(studentId);
+    setAttendance(prev => ({ ...prev, [studentId]: prev[studentId] === 'present' ? 'absent' : 'present' }));
+  };
+
+  const setStatus = (studentId, status) => {
+    touchedRef.current.add(studentId);
+    setAttendance(prev => ({ ...prev, [studentId]: status }));
+  };
+
+  const markAll = (status) => {
+    const updated = {};
+    students.forEach(s => { updated[s._id] = status; touchedRef.current.add(s._id); });
+    setAttendance(updated);
+  };
+
+  const saveAndEndSession = async () => {
+    if (!session) return;
+    setSaving(true);
+    try {
+      // Save manual attendance
+      const attendanceList = students.map(s => ({ studentId: s._id, status: attendance[s._id] || 'absent' }));
+      await api.post('/attendance/manual', { sessionId: session._id, attendanceList });
+      // End session
+      await api.put(`/sessions/${session._id}/end`);
+      toast.success('Attendance সংরক্ষিত ও session শেষ হয়েছে!');
+      setStep('done');
+    } catch (err) { toast.error(err.response?.data?.message || 'Error'); }
+    finally { setSaving(false); }
+  };
+
+  const resetAll = () => {
+    setSession(null); setSelectedSubject(null);
+    setStudents([]); setAttendance({}); setSearch('');
+    setStep('select');
+    api.get('/subjects').then(r => setSubjects(r.data.subjects || []));
+  };
+
+  const filteredStudents = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return students;
+    return students.filter(s =>
+      s.name?.toLowerCase().includes(q) || s.studentId?.toLowerCase().includes(q)
+    );
+  }, [students, search]);
+
+  if (loading) return <div className="loading"><div className="spinner" /></div>;
+
+  const presentCount = Object.values(attendance).filter(v => v === 'present').length;
+  const absentCount = students.length - presentCount;
+
+  if (step === 'done') return (
+    <div className="min-h-[70vh] flex items-center justify-center px-4">
+      <div className="w-full max-w-sm text-center animate-fade-in">
+        <div className="w-20 h-20 rounded-full bg-brand-100 text-brand-600 flex items-center justify-center mx-auto mb-5 shadow-brand">
+          <Icon name="check" size={34} />
+        </div>
+        <h3 className="text-xl font-bold text-slate-900 mb-1.5">Attendance সম্পন্ন!</h3>
+        <p className="text-slate-500 mb-6">{selectedSubject?.name} — Section {selectedSubject?.section}</p>
+        <div className="grid grid-cols-2 gap-3 mb-7">
+          <div className="rounded-2xl bg-brand-50 border border-brand-100 py-4">
+            <div className="text-2xl font-extrabold text-brand-700">{presentCount}</div>
+            <div className="text-xs font-medium text-brand-600 mt-0.5">Present</div>
+          </div>
+          <div className="rounded-2xl bg-red-50 border border-red-100 py-4">
+            <div className="text-2xl font-extrabold text-red-600">{absentCount}</div>
+            <div className="text-xs font-medium text-red-500 mt-0.5">Absent</div>
+          </div>
+        </div>
+        <button
+          onClick={resetAll}
+          className="w-full rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-semibold py-3 shadow-brand transition-colors"
+        >
+          নতুন Attendance নিন
+        </button>
+      </div>
+    </div>
+  );
+
+  if (step === 'mark') return (
+    <div className="min-h-screen bg-slate-50 flex flex-col">
+      <div className="sticky top-0 z-10 bg-white border-b border-slate-200 px-4 py-3 flex items-center gap-3 shadow-soft">
+        <button
+          onClick={() => { if (window.confirm('Session বাতিল করবেন?')) { api.put(`/sessions/${session?._id}/end`).catch(() => { }); resetAll(); } }}
+          className="w-9 h-9 rounded-lg flex items-center justify-center text-slate-500 hover:bg-slate-100 shrink-0"
+        >
+          <Icon name="chevronLeft" size={18} />
+        </button>
+        <div className="flex-1 min-w-0">
+          <div className="font-semibold text-slate-900 truncate">{session?.subjectId?.name}</div>
+          <div className="text-xs text-slate-500">Sem {session?.semester} • Section {session?.section}</div>
+        </div>
+        <div className="flex gap-2 shrink-0 items-center">
+          <span className="text-xs font-semibold bg-brand-100 text-brand-700 rounded-full px-2.5 py-1">{presentCount}P</span>
+          <span className="text-xs font-semibold bg-red-100 text-red-700 rounded-full px-2.5 py-1">{absentCount}A</span>
+          {/* Extra quick-access submit button in the top bar, in addition to the one at the bottom of the list */}
+          <button
+            onClick={saveAndEndSession}
+            disabled={saving || students.length === 0}
+            className="flex items-center gap-1 rounded-lg bg-brand-600 hover:bg-brand-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white text-xs font-semibold px-2.5 py-1.5 shadow-brand transition-colors"
+          >
+            {saving ? <div className="spinner spinner-sm" /> : <Icon name="check" size={12} />}
+            Submit Attendance
+          </button>
+        </div>
+      </div>
+
+      <div className="bg-white border-b border-slate-200 px-4 py-3 flex flex-col sm:flex-row gap-2.5">
+        <div className="relative flex-1">
+          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+            <Icon name="search" size={16} />
+          </span>
+          <input
+            type="text"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="নাম বা Student ID দিয়ে খুঁজুন..."
+            className="w-full rounded-xl border border-slate-200 bg-slate-50 pl-9 pr-9 py-2.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-brand-500 transition"
+          />
+          {search && (
+            <button
+              onClick={() => setSearch('')}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+            >
+              <Icon name="x" size={14} />
+            </button>
+          )}
+        </div>
+        <div className="flex gap-2 shrink-0">
+          <button
+            onClick={() => markAll('present')}
+            className="flex items-center gap-1.5 rounded-xl bg-brand-50 hover:bg-brand-100 text-brand-700 text-xs font-semibold px-3 py-2.5 transition-colors"
+          >
+            <Icon name="check" size={14} /> সবাই Present
+          </button>
+          <button
+            onClick={() => markAll('absent')}
+            className="flex items-center gap-1.5 rounded-xl bg-red-50 hover:bg-red-100 text-red-700 text-xs font-semibold px-3 py-2.5 transition-colors"
+          >
+            <Icon name="x" size={14} /> সবাই Absent
+          </button>
+        </div>
+      </div>
+
+      {search && (
+        <div className="px-4 py-2 bg-white border-b border-slate-100 text-xs text-slate-500">
+          {filteredStudents.length} জন পাওয়া গেছে
+        </div>
+      )}
+
+      <div className="flex-1 bg-white divide-y divide-slate-100">
+        {students.length === 0 ? (
+          <div className="py-16 text-center text-slate-400">এই class-এ কোনো student নেই</div>
+        ) : filteredStudents.length === 0 ? (
+          <div className="py-16 text-center text-slate-400">
+            <Icon name="search" size={22} />
+            <p className="mt-2 text-sm">কোনো student পাওয়া যায়নি</p>
+          </div>
+        ) : filteredStudents.map(s => {
+          const status = attendance[s._id];
+          return (
+            <div key={s._id} className="flex items-center gap-3 px-4 py-3 hover:bg-slate-50 transition-colors">
+              <div className="w-10 h-10 rounded-full bg-brand-100 text-brand-700 flex items-center justify-center font-bold text-sm shrink-0">
+                {s.name?.charAt(0)}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="font-medium text-slate-900 truncate">{s.name}</div>
+                <div className="text-xs text-slate-400 font-mono">{s.studentId}</div>
+              </div>
+              <div className="flex gap-1.5 shrink-0">
+                <button
+                  onClick={() => toggleStudent(s._id)}
+                  className={`w-9 h-9 rounded-lg flex items-center justify-center text-sm font-bold border transition-colors ${status === 'present'
+                      ? 'bg-brand-600 border-brand-600 text-white'
+                      : 'bg-white border-slate-200 text-slate-400 hover:border-brand-300 hover:text-brand-600'
+                    }`}
+                >
+                  P
+                </button>
+                <button
+                  onClick={() => setStatus(s._id, 'absent')}
+                  className={`w-9 h-9 rounded-lg flex items-center justify-center text-sm font-bold border transition-colors ${status === 'absent'
+                      ? 'bg-red-500 border-red-500 text-white'
+                      : 'bg-white border-slate-200 text-slate-400 hover:border-red-300 hover:text-red-500'
+                    }`}
+                >
+                  A
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/*
+        Save/End button — now a normal in-flow element right after the last student row,
+        not sticky/fixed. It naturally moves down as more students are added, and can
+        never end up hidden behind the app's fixed .bottom-nav.
+      */}
+      <div className="bg-white border-t border-slate-200 px-4 py-3">
+        <button
+          onClick={saveAndEndSession}
+          disabled={saving || students.length === 0}
+          className="w-full flex items-center justify-center gap-2 rounded-lg bg-brand-600 hover:bg-brand-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white text-sm font-semibold py-2.5 shadow-brand transition-colors"
+        >
+          {saving ? (
+            <><div className="spinner spinner-sm" /> সংরক্ষণ হচ্ছে...</>
+          ) : (
+            <><Icon name="check" size={14} /> Attendance সংরক্ষণ ও Session শেষ</>
+          )}
+        </button>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="page">
+      <div className="page-header">
+        <h2 className="page-title">Attendance নিন</h2>
+        <p className="page-sub">কোন subject-এর attendance নেবেন?</p>
+      </div>
+
+      {subjects.length === 0 ? (
+        <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center">
+          <div className="w-12 h-12 rounded-xl bg-brand-50 text-brand-600 flex items-center justify-center mx-auto mb-3">
+            <Icon name="book" size={22} />
+          </div>
+          <p className="text-slate-500">কোনো subject নেই। আগে &quot;Subjects&quot; থেকে subject তৈরি করুন।</p>
+        </div>
+      ) : (
+        <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))' }}>
+          {subjects.map(s => (
+            <button
+              key={s._id}
+              disabled={saving}
+              onClick={() => startSession(s)}
+              className="text-left rounded-2xl border border-slate-200 bg-white p-4 hover:border-brand-300 hover:shadow-card transition-all disabled:opacity-60"
+            >
+              <div className="text-xs font-mono font-semibold text-brand-600 mb-1">{s.code}</div>
+              <div className="font-semibold text-slate-900 mb-1">{s.name}</div>
+              <div className="text-xs text-slate-500">
+                {s.departmentId?.name || <span className="text-amber-600">Department নেই</span>} • Sem {s.semester} • Sec {s.section}
+              </div>
+              <div className="mt-3 flex items-center gap-1.5 text-brand-600 text-sm font-semibold">
+                <Icon name="play" size={14} /> Attendance শুরু করুন
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
