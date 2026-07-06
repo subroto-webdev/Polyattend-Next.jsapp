@@ -123,6 +123,19 @@ export default function LoginPage() {
         <p className="text-white/40 text-[13px]">
           <TypeWriter text="ঠাকুরগাঁও পলিটেকনিক ইন্সটিটিউট — ডিজিটাল উপস্থিতি ব্যবস্থাপনা" delay={3.0} speed={30} />
         </p>
+
+        {/* Download App Button */}
+        <a
+          href="https://github.com/subroto-webdev/Polyattend-Next.jsapp/releases/download/v1.0.0/app-debug.apk"
+          download
+          className="inline-flex items-center gap-2 mt-4 px-4 py-2 rounded-full text-[12px] font-bold text-emerald-300 border border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 hover:border-emerald-500/50 transition-all duration-200"
+          style={{ animation: 'fadeUp 0.5s ease both', animationDelay: '3.5s', opacity: 0 }}
+        >
+          <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+          Android App ডাউনলোড করুন
+        </a>
       </div>
 
       {/* Login Card */}
