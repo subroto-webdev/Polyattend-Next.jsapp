@@ -2,6 +2,7 @@ import ExcelJS from 'exceljs';
 import User from '@/lib/models/User';
 import Attendance from '@/lib/models/Attendance';
 import { requireAuth, errorResponse } from '@/lib/auth';
+import { buildStudentReportPDF } from '@/lib/pdfReport';
 
 export const dynamic = 'force-dynamic';
 
@@ -42,6 +43,19 @@ export async function GET(request, { params }) {
       bySubject[sid].records.push(r);
     });
 
+    // FEATURE: PDF download alongside Excel.
+    const format = new URL(request.url).searchParams.get('format');
+    if (format === 'pdf') {
+      const buffer = await buildStudentReportPDF({ student, bySubject, records });
+      return new Response(buffer, {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/pdf',
+          'Content-Disposition': `attachment; filename="student_${student.studentId}_report.pdf"`,
+        },
+      });
+    }
+
     const wb = new ExcelJS.Workbook();
     wb.creator = 'PolyAttend';
     const ws = wb.addWorksheet('My Attendance');
@@ -52,7 +66,7 @@ export async function GET(request, { params }) {
     ws.getCell('A1').alignment = { horizontal: 'center' };
 
     ws.mergeCells('A2:G2');
-    ws.getCell('A2').value = `Student: ${student.name} | ID: ${student.studentId} | Dept: ${student.departmentId?.name} | Semester: ${student.semester} | Section: ${student.section} | Shift: ${student.shift || 'N/A'}`;
+    ws.getCell('A2').value = `Student: ${student.name} | ID: ${student.studentId} | Dept: ${student.departmentId?.name} | Semester: ${student.semester} | Group: ${student.section} | Shift: ${student.shift || 'N/A'}`;
     ws.getCell('A2').alignment = { horizontal: 'center' };
     ws.getRow(2).font = { size: 10, italic: true };
 
@@ -85,17 +99,22 @@ export async function GET(request, { params }) {
     totRow.eachCell(cell => applyBorder(cell));
 
     const ws2 = wb.addWorksheet('Date-wise Records');
-    const h2 = ws2.addRow(['Date', 'Subject', 'Subject Code', 'Status']);
+    const h2 = ws2.addRow(['Date', 'Subject', 'Subject Code', 'Status', 'Method']);
     h2.eachCell(cell => Object.assign(cell, headerStyle));
-    ws2.columns = [{ width: 16 }, { width: 24 }, { width: 14 }, { width: 12 }];
+    ws2.columns = [{ width: 16 }, { width: 24 }, { width: 14 }, { width: 12 }, { width: 14 }];
     records.forEach(r => {
+      const methodLabel = r.status !== 'present' ? '-' : r.markedBy === 'self' ? 'Self' : r.markedBy === 'qr' ? 'QR Scan' : r.markedBy === 'manual' ? 'Manual' : r.markedBy === 'search' ? 'Search' : '-';
       const row = ws2.addRow([
         new Date(r.date).toLocaleDateString('en-BD'),
-        r.subjectId?.name || '-', r.subjectId?.code || '-', r.status,
+        r.subjectId?.name || '-', r.subjectId?.code || '-', r.status, methodLabel,
       ]);
       row.eachCell(cell => applyBorder(cell));
       row.getCell(4).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: r.status === 'present' ? 'FFD1FAE5' : 'FFFEE2E2' } };
       row.getCell(4).font = { color: { argb: r.status === 'present' ? 'FF065F46' : 'FF991B1B' }, bold: true };
+      if (r.status === 'present' && r.markedBy === 'self') {
+        row.getCell(5).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEF3C7' } };
+        row.getCell(5).font = { color: { argb: 'FF92400E' }, bold: true };
+      }
     });
 
     const buffer = await wb.xlsx.writeBuffer();

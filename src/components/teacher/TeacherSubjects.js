@@ -55,7 +55,7 @@ export default function TeacherSubjects() {
   // Group by dept/sem/section
   const grouped = {};
   subjects.forEach(s => {
-    const key = `${s.departmentId?.name || 'Unknown Department'} — Semester ${s.semester} Section ${s.section}`;
+    const key = `${s.departmentId?.name || 'Unknown Department'} — Semester ${s.semester} Group ${s.section}`;
     if (!grouped[key]) grouped[key] = [];
     grouped[key].push(s);
   });
@@ -190,14 +190,14 @@ export default function TeacherSubjects() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-600 mb-1.5">Section *</label>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1.5">Group *</label>
                   <select
                     className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-brand-500 transition appearance-none"
                     value={form.section}
                     onChange={set('section')}
                   >
                     <option value="">--</option>
-                    {['A', 'B', 'C', 'D'].map(s => <option key={s} value={s}>Section {s}</option>)}
+                    {['A', 'B', 'C', 'D'].map(s => <option key={s} value={s}>Group {s}</option>)}
                   </select>
                 </div>
               </div>

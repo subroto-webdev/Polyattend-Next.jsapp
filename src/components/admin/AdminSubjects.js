@@ -70,7 +70,7 @@ export default function AdminSubjects() {
   // Group subjects
   const grouped = {};
   subjects.forEach(s => {
-    const key = `${s.departmentId?.name} — Semester ${s.semester} Section ${s.section}`;
+    const key = `${s.departmentId?.name} — Semester ${s.semester} Group ${s.section}`;
     if (!grouped[key]) grouped[key] = [];
     grouped[key].push(s);
   });
@@ -160,10 +160,10 @@ export default function AdminSubjects() {
                 </select>
               </div>
               <div className="form-group">
-                <label className="form-label">Section *</label>
+                <label className="form-label">Group *</label>
                 <select className="form-select" value={form.section} onChange={set('section')}>
                   <option value="">--</option>
-                  {['A', 'B', 'C', 'D'].map(s => <option key={s} value={s}>Section {s}</option>)}
+                  {['A', 'B', 'C', 'D'].map(s => <option key={s} value={s}>Group {s}</option>)}
                 </select>
               </div>
             </div>

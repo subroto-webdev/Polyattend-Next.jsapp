@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import api from '@/utils/api';
 import Icon from '@/components/common/Icon';
 import toast from 'react-hot-toast';
+import useSessionExitGuard from '@/hooks/useSessionExitGuard';
 // html5-qrcode browser-only library প্রথমে load হয় client-side, SSR safety-র জন্য dynamic import
 
 const SCAN_COOLDOWN = 1200;
@@ -20,6 +21,11 @@ export default function TeacherScanner() {
   const [scanStatus, setScanStatus] = useState('idle'); // 'idle' | 'scanning' | 'success' | 'error'
   const [lastScanned, setLastScanned] = useState(null);
   const [cameraError, setCameraError] = useState(null);
+
+  // FIX: teacher must not be able to leave this page mid-session (Back,
+  // Refresh, other page, Logout) without ending it first — see
+  // src/hooks/useSessionExitGuard.js.
+  useSessionExitGuard(!!session, selectedSubject ? `QR Scanner — ${selectedSubject.name}` : 'QR Scanner');
 
   // ── NEW FEATURE: Session চলাকালীন student manually search করে present করা ──
   const [searchTerm, setSearchTerm] = useState('');
@@ -135,12 +141,21 @@ export default function TeacherScanner() {
       return;
     }
 
+    // FIX: this call previously left the acquired camera stream running.
+    // html5-qrcode's own Html5Qrcode.start() then tried to open the *same*
+    // camera again a moment later and failed with "NotReadableError: Could
+    // not start video source" because the device was still held by this
+    // stream — which is exactly why teachers could never get past "Camera
+    // চালু করুন" to actually scan. We only need this call to *check*
+    // permission, so we immediately stop every track before continuing.
     try {
-      await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+      const permCheckStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+      permCheckStream.getTracks().forEach(track => track.stop());
     } catch (err) {
       // If environment camera request failed, try checking if user camera is allowed
       try {
-        await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
+        const permCheckStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
+        permCheckStream.getTracks().forEach(track => track.stop());
       } catch {
         const msg = 'Camera অ্যাক্সেস দেওয়া হয়নি। Browser settings থেকে Camera permission চালু করুন।';
         setCameraError(msg);
@@ -148,6 +163,11 @@ export default function TeacherScanner() {
         return;
       }
     }
+
+    // Give the browser a brief moment to fully release the camera device
+    // after stopping the permission-check stream above, before html5-qrcode
+    // tries to open it again.
+    await new Promise(r => setTimeout(r, 150));
 
     setScanning(true);
 
@@ -316,7 +336,7 @@ export default function TeacherScanner() {
             >
               <div className="subject-code">{s.code}</div>
               <div className="subject-name">{s.name}</div>
-              <div className="subject-meta">{s.departmentId?.name} • Sem {s.semester} • Sec {s.section}</div>
+              <div className="subject-meta">{s.departmentId?.name} • Sem {s.semester} • Group {s.section}</div>
               <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 6, color: 'var(--primary)', fontSize: 13, fontWeight: 600 }}>
                 {sessionLoading ? <span style={{ fontSize: 12 }}>শুরু হচ্ছে...</span> : <><Icon name="qr" size={14} /> QR Session শুরু</>}
               </div>
@@ -334,7 +354,7 @@ export default function TeacherScanner() {
         <div style={{ flex: 1 }}>
           <div className="action-bar-title">{session.subjectId?.name}</div>
           <div style={{ fontSize: 12, color: 'var(--txt2)' }}>
-            Sem {session.semester} • Sec {session.section} • {presentCount} scanned
+            Sem {session.semester} • Group {session.section} • {presentCount} scanned
           </div>
         </div>
         <button className="btn-danger btn-sm" onClick={endSession}>
@@ -532,7 +552,7 @@ export default function TeacherScanner() {
                           <div style={{ flex: 1 }}>
                             <div style={{ fontWeight: 600, fontSize: 13 }}>{student.name}</div>
                             <div style={{ fontSize: 12, color: 'var(--txt2)' }}>
-                              ID: {student.studentId} • Sec {student.section}
+                              ID: {student.studentId} • Group {student.section}
                             </div>
                           </div>
                           {isPresent ? (
@@ -571,7 +591,14 @@ export default function TeacherScanner() {
                 <div key={a._id} className="list-item" style={{ cursor: 'default' }}>
                   <div className="item-icon icon-green"><Icon name="check" size={18} /></div>
                   <div className="item-content">
-                    <div className="item-title">{a.studentId?.name}</div>
+                    <div className="item-title" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      {a.studentId?.name}
+                      {a.markedBy === 'self' && (
+                        <span className="tag tag-amber" style={{ fontSize: 10, padding: '2px 6px' }} title="শিক্ষার্থী নিজে attendance দিয়েছে">
+                          Self
+                        </span>
+                      )}
+                    </div>
                     <div className="item-sub">{a.studentId?.studentId}</div>
                   </div>
                   <div style={{ fontSize: 11, color: 'var(--txt3)' }}>

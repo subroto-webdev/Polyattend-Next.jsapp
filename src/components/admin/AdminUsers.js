@@ -1,5 +1,5 @@
 'use client';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import api from '@/utils/api';
 import Icon from '@/components/common/Icon';
 import toast from 'react-hot-toast';
@@ -10,6 +10,25 @@ export default function AdminUsers() {
   const [roleFilter, setRoleFilter] = useState('all');
   const [search, setSearch] = useState('');
   const [currentUser, setCurrentUser] = useState(null); // Add this
+
+  // ── FIX (grouping request): group students by Section wherever the list
+  // shows one, instead of a flat list. Teachers/admins don't have a Section,
+  // so they're grouped together separately.
+  const groupedUsers = useMemo(() => {
+    const withSection = {};
+    const noSection = [];
+    users.forEach(u => {
+      if (u.role === 'student' && u.section) {
+        if (!withSection[u.section]) withSection[u.section] = [];
+        withSection[u.section].push(u);
+      } else {
+        noSection.push(u);
+      }
+    });
+    const groups = Object.keys(withSection).sort().map(key => ({ label: `Group: ${key}`, items: withSection[key] }));
+    if (noSection.length) groups.push({ label: 'Teacher / Admin', items: noSection });
+    return groups;
+  }, [users]);
 
   const load = () => {
     setLoading(true);
@@ -118,9 +137,20 @@ export default function AdminUsers() {
                 </tr>
               </thead>
               <tbody>
-                {users.map((u, i) => (
-                  <tr key={u._id}>
-                    <td style={{ color: 'var(--txt3)', fontSize: 12 }}>{i + 1}</td>
+                {(() => {
+                  let rowNum = 0;
+                  return groupedUsers.map(group => (
+                    <React.Fragment key={group.label}>
+                      <tr>
+                        <td colSpan={8} style={{ background: 'var(--bg3)', fontWeight: 700, fontSize: 12, color: 'var(--txt2)', padding: '8px 12px' }}>
+                          {group.label}
+                        </td>
+                      </tr>
+                      {group.items.map((u) => {
+                        rowNum++;
+                        return (
+                <tr key={u._id}>
+                    <td style={{ color: 'var(--txt3)', fontSize: 12 }}>{rowNum}</td>
                     <td>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                         <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'linear-gradient(135deg, var(--primary), var(--primary-mid))', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, flexShrink: 0 }}>
@@ -136,7 +166,7 @@ export default function AdminUsers() {
                     <td><span className={`tag ${roleColor(u.role)}`}>{u.role}</span></td>
                     <td style={{ fontSize: 12 }}>
                       {u.role === 'student'
-                        ? `${u.departmentId?.code || '-'} • Sem ${u.semester} Sec ${u.section}`
+                        ? `${u.departmentId?.code || '-'} • Sem ${u.semester} Group ${u.section}`
                         : u.departmentId?.name || '-'}
                     </td>
                     <td>
@@ -167,14 +197,24 @@ export default function AdminUsers() {
                       </button>
                     </td>
                   </tr>
-                ))}
+                        );
+                      })}
+                    </React.Fragment>
+                  ));
+                })()}
               </tbody>
             </table>
           </div>
 
           {/* Mobile Cards */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }} id="mobile-cards">
-            {users.map((u, i) => (
+          <div id="mobile-cards">
+            {groupedUsers.map(group => (
+              <div key={group.label} style={{ marginBottom: 14 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--txt2)', background: 'var(--bg3)', padding: '6px 12px', borderRadius: 8, marginBottom: 8 }}>
+                  {group.label}
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {group.items.map((u, i) => (
               <div key={u._id} style={{
                 background: 'var(--bg)', border: '1px solid var(--border)',
                 borderRadius: 'var(--radius-lg)', padding: '14px 16px',
@@ -200,7 +240,7 @@ export default function AdminUsers() {
                   <div style={{ fontSize: 12, color: 'var(--txt2)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.email}</div>
                   <div style={{ fontSize: 11, color: 'var(--txt3)', marginTop: 3 }}>
                     {u.role === 'student'
-                      ? `${u.departmentId?.code || '-'} • Sem ${u.semester} • Sec ${u.section} • ID: ${u.studentId || '-'}`
+                      ? `${u.departmentId?.code || '-'} • Sem ${u.semester} • Group ${u.section} • ID: ${u.studentId || '-'}`
                       : u.departmentId?.name || '-'}
                   </div>
                 </div>
@@ -225,6 +265,9 @@ export default function AdminUsers() {
                   >
                     {u.isActive ? 'Deactivate' : 'Activate'}
                   </button>
+                </div>
+              </div>
+                  ))}
                 </div>
               </div>
             ))}

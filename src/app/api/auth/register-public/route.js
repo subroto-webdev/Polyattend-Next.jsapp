@@ -1,12 +1,19 @@
 import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/dbConnect';
 import User from '@/lib/models/User';
-import QRCode from 'qrcode';
+import PendingRegistration from '@/lib/models/PendingRegistration';
 import sendEmail from '@/lib/sendEmail';
 import { errorResponse } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
+// POST /api/auth/register-public
+// ── FIX (Requirement #5) ────────────────────────────────────────────────
+// No real User is created here anymore. The submitted data is held in a
+// PendingRegistration doc (hashed password, same as before) alongside a
+// fresh OTP. The real account only gets created in /api/auth/verify-email
+// once that OTP is confirmed — so anyone who abandons signup before
+// verifying leaves nothing permanent in the User collection.
 export async function POST(request) {
   await dbConnect();
   try {
@@ -21,7 +28,10 @@ export async function POST(request) {
       return NextResponse.json({ success: false, message: 'Password কমপক্ষে ৬ অক্ষরের হতে হবে' }, { status: 400 });
     }
 
-    const existing = await User.findOne({ email });
+    const normalizedEmail = email.toLowerCase().trim();
+
+    // Already a real, registered account?
+    const existing = await User.findOne({ email: normalizedEmail });
     if (existing) return NextResponse.json({ success: false, message: 'এই email দিয়ে আগেই account আছে' }, { status: 400 });
 
     if (role === 'teacher') {
@@ -32,7 +42,7 @@ export async function POST(request) {
 
     if (role === 'student') {
       if (!studentId || !departmentId || !semester || !section || !shift) {
-        return NextResponse.json({ success: false, message: 'Student ID, Department, Semester, Section ও Shift দিন' }, { status: 400 });
+      return NextResponse.json({ success: false, message: 'Student ID, Department, Semester, Group ও Shift দিন' }, { status: 400 });
       }
       const existingStudent = await User.findOne({ studentId });
       if (existingStudent) return NextResponse.json({ success: false, message: 'এই Student ID আগেই registered' }, { status: 400 });
@@ -41,23 +51,19 @@ export async function POST(request) {
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     const otpExpire = new Date(Date.now() + 10 * 60 * 1000);
 
-    const user = await User.create({
-      name, email, password, role,
+    // Replace any earlier, never-verified attempt for this email with a fresh one.
+    await PendingRegistration.deleteMany({ email: normalizedEmail });
+
+    const pending = await PendingRegistration.create({
+      name, email: normalizedEmail, password, role,
       studentId: role === 'student' ? studentId : undefined,
       departmentId: role === 'student' ? departmentId : undefined,
       semester: role === 'student' ? parseInt(semester) : undefined,
       section: role === 'student' ? section : undefined,
       shift,
-      isVerified: false,
-      verificationOTP: otp,
-      verificationExpire: otpExpire,
+      otp,
+      otpExpire,
     });
-
-    if (role === 'student' && studentId) {
-      const qrData = JSON.stringify({ studentId: user._id.toString(), sid: studentId });
-      user.qrCode = await QRCode.toDataURL(qrData);
-      await user.save();
-    }
 
     const subject = 'PolyAttend Email Verification Code';
     const message = `Hello ${name},\n\nWelcome to PolyAttend. Please use the following One-Time Password (OTP) to verify your email address:\n\nVerification Code: ${otp}\n\nThis OTP is valid for 10 minutes. If you did not register for this account, please ignore this email.`;
@@ -72,12 +78,18 @@ export async function POST(request) {
         <p style="color: #64748b; font-size: 13px;">This code is valid for 10 minutes. If you did not create this account, please ignore this email.</p>
       </div>`;
 
-    await sendEmail({ email: user.email, subject, message, html });
+    try {
+      await sendEmail({ email: pending.email, subject, message, html });
+    } catch (mailErr) {
+      // Email sending failed — don't leave an orphaned pending record behind.
+      await PendingRegistration.findByIdAndDelete(pending._id);
+      throw mailErr;
+    }
 
     return NextResponse.json({
       success: true,
       message: 'Registration successful! Please check your email for the verification code.',
-      email: user.email,
+      email: pending.email,
       requiresVerification: true,
     }, { status: 201 });
   } catch (error) { return errorResponse(error); }

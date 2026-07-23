@@ -56,7 +56,14 @@ export default function StudentAttendance() {
                     <td>{new Date(r.date).toLocaleDateString('en-BD', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' })}</td>
                     <td>
                       {r.status === 'present'
-                        ? <span className="att-p">✓ Present</span>
+                        ? (
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                            <span className="att-p">✓ Present</span>
+                            {r.markedBy === 'self' && (
+                              <span className="tag tag-amber" style={{ fontSize: 10, padding: '2px 6px' }} title="আপনি নিজে attendance দিয়েছিলেন">Self</span>
+                            )}
+                          </span>
+                        )
                         : <span className="att-a">✗ Absent</span>}
                     </td>
                   </tr>

@@ -3,6 +3,7 @@ import Session from '@/lib/models/Session';
 import Attendance from '@/lib/models/Attendance';
 import User from '@/lib/models/User';
 import { requireAuth, errorResponse } from '@/lib/auth';
+import { buildSessionReportPDF } from '@/lib/pdfReport';
 
 export const dynamic = 'force-dynamic';
 
@@ -20,7 +21,10 @@ const applyBorder = (cell) => {
 
 // GET /api/reports/class/:sessionId
 export async function GET(request, { params }) {
-  const auth = await requireAuth(request);
+  // SECURITY FIX: was open to any authenticated user (including students),
+  // exposing the full class roster + who was present/absent for any session
+  // ID. Restrict to the owning teacher or an admin, same as other reports.
+  const auth = await requireAuth(request, ['teacher', 'admin']);
   if (auth.error) return auth.error;
   try {
     const session = await Session.findById(params.sessionId)
@@ -42,45 +46,76 @@ export async function GET(request, { params }) {
 
     const allStudents = await User.find(studentFilter).sort({ studentId: 1 });
 
+    const presentMap = {};
+    attendance.forEach(a => { presentMap[a.studentId._id.toString()] = a; });
+
+    // FEATURE: PDF download alongside Excel.
+    const format = new URL(request.url).searchParams.get('format');
+    if (format === 'pdf') {
+      const buffer = await buildSessionReportPDF({ session, allStudents, presentMap });
+      return new Response(buffer, {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/pdf',
+          'Content-Disposition': `attachment; filename="session_${params.sessionId}.pdf"`,
+        },
+      });
+    }
+
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet('Attendance');
 
-    ws.mergeCells('A1:F1');
+    ws.mergeCells('A1:G1');
     ws.getCell('A1').value = `${session.departmentId.name} - Attendance Sheet`;
     ws.getCell('A1').font = { bold: true, size: 14, color: { argb: GREEN } };
     ws.getCell('A1').alignment = { horizontal: 'center' };
 
-    ws.mergeCells('A2:F2');
-    ws.getCell('A2').value = `Subject: ${session.subjectId?.name || 'N/A'} | Semester: ${session.semester} | Section: ${session.section} | Shift: ${session.shift || 'N/A'} | Date: ${new Date(session.date).toLocaleDateString('en-BD')} | Teacher: ${session.teacherId?.name || 'N/A'}`;
+    ws.mergeCells('A2:G2');
+    ws.getCell('A2').value = `Subject: ${session.subjectId?.name || 'N/A'} | Semester: ${session.semester} | Group: ${session.section} | Shift: ${session.shift || 'N/A'} | Date: ${new Date(session.date).toLocaleDateString('en-BD')} | Teacher: ${session.teacherId?.name || 'N/A'}`;
     ws.getCell('A2').alignment = { horizontal: 'center' };
 
     ws.addRow([]);
-    const headerRow = ws.addRow(['#', 'Student ID', 'Student Name', 'Section', 'Status', 'Scan Time']);
+    const headerRow = ws.addRow(['#', 'Student ID', 'Student Name', 'Group', 'Status', 'Method', 'Scan Time']);
     headerRow.eachCell(cell => Object.assign(cell, headerStyle));
-    ws.columns = [{ width: 6 }, { width: 14 }, { width: 24 }, { width: 10 }, { width: 12 }, { width: 16 }];
+    ws.columns = [{ width: 6 }, { width: 14 }, { width: 24 }, { width: 10 }, { width: 12 }, { width: 14 }, { width: 16 }];
 
-    const presentMap = {};
-    attendance.forEach(a => { presentMap[a.studentId._id.toString()] = a; });
+    const methodLabel = (markedBy) => {
+      switch (markedBy) {
+        case 'self': return 'Self';
+        case 'qr': return 'QR Scan';
+        case 'manual': return 'Manual';
+        case 'search': return 'Search';
+        default: return '-';
+      }
+    };
 
     allStudents.forEach((student, i) => {
       const rec = presentMap[student._id.toString()];
       const isPresent = !!rec && rec.status === 'present';
+      const isSelf = isPresent && rec.markedBy === 'self';
       const row = ws.addRow([
         i + 1, student.studentId, student.name, student.section,
         isPresent ? 'Present' : 'Absent',
+        isPresent ? methodLabel(rec.markedBy) : '-',
         rec?.scannedAt ? new Date(rec.scannedAt).toLocaleTimeString() : '-',
       ]);
       row.getCell(5).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: isPresent ? 'FFD1FAE5' : 'FFFEE2E2' } };
       row.getCell(5).font = { color: { argb: isPresent ? 'FF065F46' : 'FF991B1B' }, bold: true };
+      // Self-marked attendance gets its own amber highlight in the Method
+      // column so teachers/admins can spot it at a glance in the report.
+      if (isSelf) {
+        row.getCell(6).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEF3C7' } };
+        row.getCell(6).font = { color: { argb: 'FF92400E' }, bold: true };
+      }
       row.eachCell(cell => applyBorder(cell));
     });
 
     const presentCount = Object.values(presentMap).filter(a => a.status === 'present').length;
     ws.addRow([]);
-    ws.addRow(['', '', '', 'Total', allStudents.length, '']).font = { bold: true };
-    ws.addRow(['', '', '', 'Present', presentCount, '']).font = { bold: true, color: { argb: 'FF065F46' } };
-    ws.addRow(['', '', '', 'Absent', allStudents.length - presentCount, '']).font = { bold: true, color: { argb: 'FF991B1B' } };
-    ws.addRow(['', '', '', 'Percentage', `${allStudents.length ? Math.round(presentCount / allStudents.length * 100) : 0}%`, '']).font = { bold: true };
+    ws.addRow(['', '', '', 'Total', allStudents.length, '', '']).font = { bold: true };
+    ws.addRow(['', '', '', 'Present', presentCount, '', '']).font = { bold: true, color: { argb: 'FF065F46' } };
+    ws.addRow(['', '', '', 'Absent', allStudents.length - presentCount, '', '']).font = { bold: true, color: { argb: 'FF991B1B' } };
+    ws.addRow(['', '', '', 'Percentage', `${allStudents.length ? Math.round(presentCount / allStudents.length * 100) : 0}%`, '', '']).font = { bold: true };
 
     const buffer = await wb.xlsx.writeBuffer();
     return new Response(buffer, {

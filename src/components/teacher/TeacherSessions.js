@@ -48,13 +48,20 @@ export function TeacherSessions() {
             </div>
             <div className="table-wrap">
               <table>
-                <thead><tr><th>Student ID</th><th>Name</th><th>Status</th><th>Time</th></tr></thead>
+                <thead><tr><th>Student ID</th><th>Name</th><th>Status</th><th>Method</th><th>Time</th></tr></thead>
                 <tbody>
                   {attendance.map(a => (
                     <tr key={a._id}>
                       <td style={{ fontSize: 12, fontFamily: 'monospace' }}>{a.studentId?.studentId}</td>
                       <td>{a.studentId?.name}</td>
                       <td><span className={`tag tag-${a.status === 'present' ? 'green' : 'red'}`}>{a.status}</span></td>
+                      <td>
+                        {a.markedBy === 'self' ? (
+                          <span className="tag tag-amber" style={{ fontSize: 11 }} title="শিক্ষার্থী নিজে attendance দিয়েছে">Self</span>
+                        ) : a.status === 'present' ? (
+                          <span style={{ fontSize: 11, color: 'var(--txt2)', textTransform: 'capitalize' }}>{a.markedBy || 'qr'}</span>
+                        ) : '-'}
+                      </td>
                       <td style={{ fontSize: 12 }}>{a.scannedAt ? new Date(a.scannedAt).toLocaleTimeString('en-BD') : '-'}</td>
                     </tr>
                   ))}
@@ -63,20 +70,40 @@ export function TeacherSessions() {
             </div>
           </>
         ) : (
-          <div className="card">
-            {sessions.length === 0 ? <div className="empty"><p>কোনো session নেই</p></div> : sessions.map(s => (
-              <div key={s._id} className="list-item" onClick={() => viewSession(s)}>
-                <div className="item-icon icon-green"><Icon name="check" size={18} /></div>
-                <div className="item-content">
-                  <div className="item-title">{s.subjectId?.name} — Sem {s.semester} {s.section}</div>
-                  <div className="item-sub">{s.departmentId?.name} • {new Date(s.date).toLocaleDateString('en-BD')}</div>
+          <div>
+            {sessions.length === 0 ? (
+              <div className="card"><div className="empty"><p>কোনো session নেই</p></div></div>
+            ) : (() => {
+              // ── FIX (grouping request): group by Section wherever a list shows one.
+              const groups = {};
+              sessions.forEach(s => {
+                const key = s.section || 'অজানা';
+                if (!groups[key]) groups[key] = [];
+                groups[key].push(s);
+              });
+              return Object.keys(groups).sort().map(key => (
+                <div key={key} style={{ marginBottom: 14 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--txt2)', background: 'var(--bg3)', padding: '6px 12px', borderRadius: 8, marginBottom: 8 }}>
+                    Group: {key}
+                  </div>
+                  <div className="card">
+                    {groups[key].map(s => (
+                      <div key={s._id} className="list-item" onClick={() => viewSession(s)}>
+                        <div className="item-icon icon-green"><Icon name="check" size={18} /></div>
+                        <div className="item-content">
+                          <div className="item-title">{s.subjectId?.name} — Sem {s.semester} {s.section}</div>
+                          <div className="item-sub">{s.departmentId?.name} • {new Date(s.date).toLocaleDateString('en-BD')}</div>
+                        </div>
+                        <div className="item-right">
+                          <div style={{ fontSize: 13, fontWeight: 600 }}>{s.presentCount}/{s.totalStudents}</div>
+                          <div className="text-xs text-muted">{s.totalStudents ? Math.round(s.presentCount / s.totalStudents * 100) : 0}%</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-                <div className="item-right">
-                  <div style={{ fontSize: 13, fontWeight: 600 }}>{s.presentCount}/{s.totalStudents}</div>
-                  <div className="text-xs text-muted">{s.totalStudents ? Math.round(s.presentCount / s.totalStudents * 100) : 0}%</div>
-                </div>
-              </div>
-            ))}
+              ));
+            })()}
           </div>
         )}
       </div>

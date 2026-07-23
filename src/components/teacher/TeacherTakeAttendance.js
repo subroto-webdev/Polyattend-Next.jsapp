@@ -3,6 +3,7 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import api from '@/utils/api';
 import Icon from '@/components/common/Icon';
 import toast from 'react-hot-toast';
+import useSessionExitGuard from '@/hooks/useSessionExitGuard';
 
 export default function TeacherTakeAttendance() {
   const [subjects, setSubjects] = useState([]);
@@ -15,6 +16,11 @@ export default function TeacherTakeAttendance() {
   const [step, setStep] = useState('select'); // select | mark | done
   const [search, setSearch] = useState('');
   const touchedRef = useRef(new Set());
+
+  // FIX: teacher must not be able to leave this page mid-session (Back,
+  // Refresh, other page, Logout) without ending it first — see
+  // src/hooks/useSessionExitGuard.js.
+  useSessionExitGuard(step === 'mark', selectedSubject ? `Manual Attendance — ${selectedSubject.name}` : 'Manual Attendance');
 
   useEffect(() => {
     api.get('/subjects').then(r => setSubjects(r.data.subjects || [])).finally(() => setLoading(false));
@@ -51,25 +57,26 @@ export default function TeacherTakeAttendance() {
       // Load existing attendance
       const attRes = await api.get(`/attendance/session/${sess._id}`);
       const existing = {};
-      (attRes.data.attendance || []).forEach(a => { if (a?.studentId?._id) existing[a.studentId._id] = a.status; });
+      (attRes.data.attendance || []).forEach(a => { if (a?.studentId?._id) existing[a.studentId._id] = { status: a.status, markedBy: a.markedBy }; });
       // Default remaining to 'absent' — teacher (or the student themself via
       // self-check-in) has to actively mark someone present.
       const attMap = {};
-      stds.forEach(s => { attMap[s._id] = existing[s._id] || 'absent'; });
+      stds.forEach(s => { attMap[s._id] = existing[s._id] || { status: 'absent', markedBy: null }; });
       setAttendance(attMap);
       touchedRef.current = new Set();
     } catch (e) { console.error(e); toast.error('Students লোড করতে সমস্যা হয়েছে'); }
   };
 
   // Background poll while marking: pulls the latest attendance from the
-  // server (picks up students who self-check-in from their own dashboard)
-  // and merges it in — but only for students the teacher hasn't touched
-  // themselves yet, so it never overwrites an in-progress manual edit.
+  // server (picks up students who self-check-in from their own dashboard,
+  // including WHO marked it — self vs teacher/QR) and merges it in — but
+  // only for students the teacher hasn't touched themselves yet, so it
+  // never overwrites an in-progress manual edit.
   const refreshFromServer = useCallback(async (sessionId) => {
     try {
       const attRes = await api.get(`/attendance/session/${sessionId}`);
       const existing = {};
-      (attRes.data.attendance || []).forEach(a => { if (a?.studentId?._id) existing[a.studentId._id] = a.status; });
+      (attRes.data.attendance || []).forEach(a => { if (a?.studentId?._id) existing[a.studentId._id] = { status: a.status, markedBy: a.markedBy }; });
       setAttendance(prev => {
         const next = { ...prev };
         Object.keys(existing).forEach(studentId => {
@@ -119,17 +126,20 @@ export default function TeacherTakeAttendance() {
 
   const toggleStudent = (studentId) => {
     touchedRef.current.add(studentId);
-    setAttendance(prev => ({ ...prev, [studentId]: prev[studentId] === 'present' ? 'absent' : 'present' }));
+    setAttendance(prev => ({
+      ...prev,
+      [studentId]: { status: prev[studentId]?.status === 'present' ? 'absent' : 'present', markedBy: 'manual' },
+    }));
   };
 
   const setStatus = (studentId, status) => {
     touchedRef.current.add(studentId);
-    setAttendance(prev => ({ ...prev, [studentId]: status }));
+    setAttendance(prev => ({ ...prev, [studentId]: { status, markedBy: 'manual' } }));
   };
 
   const markAll = (status) => {
     const updated = {};
-    students.forEach(s => { updated[s._id] = status; touchedRef.current.add(s._id); });
+    students.forEach(s => { updated[s._id] = { status, markedBy: 'manual' }; touchedRef.current.add(s._id); });
     setAttendance(updated);
   };
 
@@ -138,7 +148,7 @@ export default function TeacherTakeAttendance() {
     setSaving(true);
     try {
       // Save manual attendance
-      const attendanceList = students.map(s => ({ studentId: s._id, status: attendance[s._id] || 'absent' }));
+      const attendanceList = students.map(s => ({ studentId: s._id, status: attendance[s._id]?.status || 'absent' }));
       await api.post('/attendance/manual', { sessionId: session._id, attendanceList });
       // End session
       await api.put(`/sessions/${session._id}/end`);
@@ -165,7 +175,7 @@ export default function TeacherTakeAttendance() {
 
   if (loading) return <div className="loading"><div className="spinner" /></div>;
 
-  const presentCount = Object.values(attendance).filter(v => v === 'present').length;
+  const presentCount = Object.values(attendance).filter(v => v?.status === 'present').length;
   const absentCount = students.length - presentCount;
 
   if (step === 'done') return (
@@ -175,7 +185,7 @@ export default function TeacherTakeAttendance() {
           <Icon name="check" size={34} />
         </div>
         <h3 className="text-xl font-bold text-slate-900 mb-1.5">Attendance সম্পন্ন!</h3>
-        <p className="text-slate-500 mb-6">{selectedSubject?.name} — Section {selectedSubject?.section}</p>
+        <p className="text-slate-500 mb-6">{selectedSubject?.name} — Group {selectedSubject?.section}</p>
         <div className="grid grid-cols-2 gap-3 mb-7">
           <div className="rounded-2xl bg-brand-50 border border-brand-100 py-4">
             <div className="text-2xl font-extrabold text-brand-700">{presentCount}</div>
@@ -207,7 +217,7 @@ export default function TeacherTakeAttendance() {
         </button>
         <div className="flex-1 min-w-0">
           <div className="font-semibold text-slate-900 truncate">{session?.subjectId?.name}</div>
-          <div className="text-xs text-slate-500">Sem {session?.semester} • Section {session?.section}</div>
+          <div className="text-xs text-slate-500">Sem {session?.semester} • Group {session?.section}</div>
         </div>
         <div className="flex gap-2 shrink-0 items-center">
           <span className="text-xs font-semibold bg-brand-100 text-brand-700 rounded-full px-2.5 py-1">{presentCount}P</span>
@@ -276,14 +286,27 @@ export default function TeacherTakeAttendance() {
             <p className="mt-2 text-sm">কোনো student পাওয়া যায়নি</p>
           </div>
         ) : filteredStudents.map(s => {
-          const status = attendance[s._id];
+          const rec = attendance[s._id];
+          const status = rec?.status;
+          const isSelf = status === 'present' && rec?.markedBy === 'self';
           return (
             <div key={s._id} className="flex items-center gap-3 px-4 py-3 hover:bg-slate-50 transition-colors">
               <div className="w-10 h-10 rounded-full bg-brand-100 text-brand-700 flex items-center justify-center font-bold text-sm shrink-0">
                 {s.name?.charAt(0)}
               </div>
               <div className="flex-1 min-w-0">
-                <div className="font-medium text-slate-900 truncate">{s.name}</div>
+                <div className="font-medium text-slate-900 truncate flex items-center gap-1.5">
+                  <span className="truncate">{s.name}</span>
+                  {isSelf && (
+                    <span
+                      className="tag tag-amber"
+                      style={{ fontSize: 10, padding: '2px 6px', flexShrink: 0 }}
+                      title="এই student নিজেই নিজের attendance দিয়েছে — সে ক্লাসে সশরীরে আছে কিনা যাচাই করুন"
+                    >
+                      Self
+                    </span>
+                  )}
+                </div>
                 <div className="text-xs text-slate-400 font-mono">{s.studentId}</div>
               </div>
               <div className="flex gap-1.5 shrink-0">
@@ -358,7 +381,7 @@ export default function TeacherTakeAttendance() {
               <div className="text-xs font-mono font-semibold text-brand-600 mb-1">{s.code}</div>
               <div className="font-semibold text-slate-900 mb-1">{s.name}</div>
               <div className="text-xs text-slate-500">
-                {s.departmentId?.name || <span className="text-amber-600">Department নেই</span>} • Sem {s.semester} • Sec {s.section}
+                {s.departmentId?.name || <span className="text-amber-600">Department নেই</span>} • Sem {s.semester} • Group {s.section}
               </div>
               <div className="mt-3 flex items-center gap-1.5 text-brand-600 text-sm font-semibold">
                 <Icon name="play" size={14} /> Attendance শুরু করুন

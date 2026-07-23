@@ -55,7 +55,7 @@ export default function RegisterPage() {
       if (!form.secretKey) return toast.error('Teacher Secret Key দিন'); // শুধু empty check
     }
     if (role === 'student' && (!form.studentId || !form.departmentId || !form.semester || !form.section || !form.shift)) {
-      return toast.error('Student ID, Department, Semester, Section ও Shift দিন');
+      return toast.error('Student ID, Department, Semester, Group ও Shift দিন');
     }
     setLoading(true);
     try {
@@ -324,10 +324,10 @@ export default function RegisterPage() {
                   </select>
                 </div>
                 <div className="form-group">
-                  <label className="form-label">Section *</label>
+                  <label className="form-label">Group *</label>
                   <select className="form-select" value={form.section} onChange={set('section')} required>
                     <option value="">--</option>
-                    {['A', 'B', 'C', 'D'].map(s => <option key={s} value={s}>Section {s}</option>)}
+                    {['A', 'B', 'C', 'D'].map(s => <option key={s} value={s}>Group {s}</option>)}
                   </select>
                 </div>
               </div>

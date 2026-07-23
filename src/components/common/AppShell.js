@@ -2,6 +2,7 @@
 import React, { useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
+import { confirmLeaveActiveSession, deactivateSessionGuard } from '@/utils/sessionGuard';
 import Icon from './Icon';
 
 export default function AppShell({ navItems, children }) {
@@ -13,11 +14,17 @@ export default function AppShell({ navItems, children }) {
   const isActive = (path) => pathname === path || (path !== `/${user?.role}` && pathname.startsWith(path + '/'));
 
   const handleNav = (path) => {
+    // FIX: teacher must not be able to silently navigate away from a live
+    // attendance session — warn first, same as Back/Refresh/Logout.
+    if (!confirmLeaveActiveSession()) return;
+    deactivateSessionGuard();
     router.push(path);
     setSidebarOpen(false);
   };
 
   const handleLogout = () => {
+    if (!confirmLeaveActiveSession()) return;
+    deactivateSessionGuard();
     logout();
     router.push('/login');
   };

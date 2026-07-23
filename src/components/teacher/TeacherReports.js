@@ -1,6 +1,6 @@
 'use client';
-import React, { useState, useEffect } from 'react';
-import api from '@/utils/api';
+import React, { useState, useEffect, useMemo } from 'react';
+import api, { getBlobErrorMessage } from '@/utils/api';
 import Icon from '@/components/common/Icon';
 import toast from 'react-hot-toast';
 
@@ -12,13 +12,38 @@ export default function TeacherReports() {
   const [loading, setLoading] = useState(false);
   const [loadingSubjects, setLoadingSubjects] = useState(true);
 
+  // ── FIX (Requirement #3): search bars ──────────────────────────────────
+  const [subjectSearch, setSubjectSearch] = useState('');
+  const [studentSearch, setStudentSearch] = useState('');
+
   useEffect(() => {
     api.get('/subjects').then(r => setSubjects(r.data.subjects || [])).finally(() => setLoadingSubjects(false));
   }, []);
 
+  const filteredSubjects = useMemo(() => {
+    const q = subjectSearch.trim().toLowerCase();
+    if (!q) return subjects;
+    return subjects.filter(s =>
+      s.name?.toLowerCase().includes(q) ||
+      s.code?.toLowerCase().includes(q) ||
+      s.departmentId?.name?.toLowerCase().includes(q)
+    );
+  }, [subjects, subjectSearch]);
+
+  const filteredReport = useMemo(() => {
+    const q = studentSearch.trim().toLowerCase();
+    if (!report) return [];
+    if (!q) return report;
+    return report.filter(r =>
+      r.student.name?.toLowerCase().includes(q) ||
+      r.student.studentId?.toLowerCase().includes(q)
+    );
+  }, [report, studentSearch]);
+
   const loadReport = async (subject) => {
     setSelectedSubject(subject);
     setLoading(true);
+    setStudentSearch('');
     try {
       const res = await api.get(`/attendance/subject/${subject._id}`);
       setReport(res.data.report);
@@ -27,33 +52,32 @@ export default function TeacherReports() {
     finally { setLoading(false); }
   };
 
-  const downloadSubjectReport = async (subjectId) => {
+  const downloadReport = async (endpoint, filenameBase, format) => {
     try {
-      const res = await api.get(`/reports/subject/${subjectId}`, { responseType: 'blob' });
+      const res = await api.get(`${endpoint}${format === 'pdf' ? '?format=pdf' : ''}`, { responseType: 'blob' });
       const url = window.URL.createObjectURL(new Blob([res.data]));
       const a = document.createElement('a');
-      a.href = url; a.download = `subject_report.xlsx`; a.click();
+      a.href = url; a.download = `${filenameBase}.${format === 'pdf' ? 'pdf' : 'xlsx'}`; a.click();
+      window.URL.revokeObjectURL(url);
       toast.success('Report download শুরু হয়েছে!');
-    } catch (err) { toast.error('Download failed'); }
+    } catch (err) { toast.error(await getBlobErrorMessage(err)); }
   };
 
-  const downloadStudentReport = async (studentId) => {
-    try {
-      const res = await api.get(`/reports/student/${studentId}`, { responseType: 'blob' });
-      const url = window.URL.createObjectURL(new Blob([res.data]));
-      const a = document.createElement('a'); a.href = url; a.download = `student_report.xlsx`; a.click();
-      toast.success('Student report download হচ্ছে!');
-    } catch (err) { toast.error('Download failed'); }
-  };
+  const downloadSubjectReport = (subjectId, format) => downloadReport(`/reports/subject/${subjectId}`, 'subject_report', format);
+  const downloadStudentReport = (studentId, format) => downloadReport(`/reports/student/${studentId}`, 'student_report', format);
+  const downloadSessionReport = (sessionId, format) => downloadReport(`/reports/class/${sessionId}`, 'session_report', format);
 
-  const downloadSessionReport = async (sessionId) => {
-    try {
-      const res = await api.get(`/reports/class/${sessionId}`, { responseType: 'blob' });
-      const url = window.URL.createObjectURL(new Blob([res.data]));
-      const a = document.createElement('a'); a.href = url; a.download = `session_report.xlsx`; a.click();
-      toast.success('Session report download হচ্ছে!');
-    } catch (err) { toast.error('Download failed'); }
-  };
+  // ── FIX (grouping request): group subjects by Section wherever the list
+  // shows a Section, instead of a flat grid.
+  const groupedSubjects = useMemo(() => {
+    const groups = {};
+    filteredSubjects.forEach(s => {
+      const key = s.section || 'অজানা';
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(s);
+    });
+    return Object.keys(groups).sort().map(key => ({ section: key, items: groups[key] }));
+  }, [filteredSubjects]);
 
   if (loadingSubjects) return <div className="loading"><div className="spinner" /></div>;
 
@@ -61,28 +85,46 @@ export default function TeacherReports() {
     <div className="page">
       <div className="page-header">
         <h2 className="page-title">Attendance Reports</h2>
-        <p className="page-sub">Subject-wise attendance দেখুন ও Excel এ download করুন</p>
+        <p className="page-sub">Subject-wise attendance দেখুন ও Excel/PDF এ download করুন</p>
       </div>
 
       {!selectedSubject ? (
         <>
           <div className="section-title">Subject বেছে নিন</div>
-          {subjects.length === 0 ? (
-            <div className="card"><div className="empty"><p>কোনো subject নেই</p></div></div>
-          ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 12 }}>
-              {subjects.map(s => (
-                <div key={s._id} className="subject-card" onClick={() => loadReport(s)}>
-                  <div className="subject-code">{s.code}</div>
-                  <div className="subject-name">{s.name}</div>
-                  <div className="subject-meta">{s.departmentId?.name} • Sem {s.semester} • Sec {s.section}</div>
-                  <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 6, color: 'var(--info)', fontSize: 13, fontWeight: 600 }}>
-                    <Icon name="eye" size={14} /> Report দেখুন
+          <div style={{ position: 'relative', marginBottom: 14 }}>
+            <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--txt3)' }}>
+              <Icon name="search" size={15} />
+            </span>
+            <input
+              type="text"
+              className="form-input"
+              placeholder="Subject নাম বা code দিয়ে খুঁজুন..."
+              value={subjectSearch}
+              onChange={e => setSubjectSearch(e.target.value)}
+              style={{ paddingLeft: 36, maxWidth: 360 }}
+            />
+          </div>
+          {filteredSubjects.length === 0 ? (
+            <div className="card"><div className="empty"><p>{subjects.length === 0 ? 'কোনো subject নেই' : 'কোনো subject পাওয়া যায়নি'}</p></div></div>
+          ) : groupedSubjects.map(group => (
+            <div key={group.section} style={{ marginBottom: 16 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--txt2)', background: 'var(--bg3)', padding: '6px 12px', borderRadius: 8, marginBottom: 8 }}>
+                Group: {group.section}
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 12 }}>
+                {group.items.map(s => (
+                  <div key={s._id} className="subject-card" onClick={() => loadReport(s)}>
+                    <div className="subject-code">{s.code}</div>
+                    <div className="subject-name">{s.name}</div>
+                    <div className="subject-meta">{s.departmentId?.name} • Sem {s.semester} • Group {s.section}</div>
+                    <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 6, color: 'var(--info)', fontSize: 13, fontWeight: 600 }}>
+                      <Icon name="eye" size={14} /> Report দেখুন
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
-          )}
+          ))}
         </>
       ) : (
         <>
@@ -92,11 +134,16 @@ export default function TeacherReports() {
             </button>
             <div style={{ flex: 1 }}>
               <div style={{ fontWeight: 600 }}>{selectedSubject.name} ({selectedSubject.code})</div>
-              <div style={{ fontSize: 12, color: 'var(--txt2)' }}>{selectedSubject.departmentId?.name} • Sem {selectedSubject.semester} • Sec {selectedSubject.section}</div>
+              <div style={{ fontSize: 12, color: 'var(--txt2)' }}>{selectedSubject.departmentId?.name} • Sem {selectedSubject.semester} • Group {selectedSubject.section}</div>
             </div>
-            <button className="btn-secondary btn-sm" onClick={() => downloadSubjectReport(selectedSubject._id)}>
-              <Icon name="download" size={14} /> Full Excel
-            </button>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <button className="btn-secondary btn-sm" onClick={() => downloadSubjectReport(selectedSubject._id, 'excel')}>
+                <Icon name="download" size={14} /> Excel
+              </button>
+              <button className="btn-secondary btn-sm" onClick={() => downloadSubjectReport(selectedSubject._id, 'pdf')}>
+                <Icon name="download" size={14} /> PDF
+              </button>
+            </div>
           </div>
 
           {loading ? <div className="loading"><div className="spinner" /></div> : !report ? null : (
@@ -123,6 +170,19 @@ export default function TeacherReports() {
               </div>
 
               <div className="section-title">Student-wise Attendance</div>
+              <div style={{ position: 'relative', marginBottom: 14 }}>
+                <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--txt3)' }}>
+                  <Icon name="search" size={15} />
+                </span>
+                <input
+                  type="text"
+                  className="form-input"
+                  placeholder="Student নাম বা ID দিয়ে খুঁজুন..."
+                  value={studentSearch}
+                  onChange={e => setStudentSearch(e.target.value)}
+                  style={{ paddingLeft: 36, maxWidth: 360 }}
+                />
+              </div>
               <div className="table-wrap">
                 <table>
                   <thead>
@@ -138,7 +198,9 @@ export default function TeacherReports() {
                     </tr>
                   </thead>
                   <tbody>
-                    {report.map((r, i) => (
+                    {filteredReport.length === 0 ? (
+                      <tr><td colSpan={8} style={{ textAlign: 'center', padding: 20, color: 'var(--txt2)' }}>কোনো student পাওয়া যায়নি</td></tr>
+                    ) : filteredReport.map((r, i) => (
                       <tr key={r.student._id}>
                         <td>{i + 1}</td>
                         <td style={{ fontWeight: 500 }}>{r.student.name}</td>
@@ -152,9 +214,14 @@ export default function TeacherReports() {
                           </span>
                         </td>
                         <td>
-                          <button className="btn-icon" title="Download Student Report" onClick={() => downloadStudentReport(r.student._id)}>
-                            <Icon name="download" size={14} />
-                          </button>
+                          <div style={{ display: 'flex', gap: 4 }}>
+                            <button className="btn-icon" title="Download Excel" onClick={() => downloadStudentReport(r.student._id, 'excel')}>
+                              <Icon name="download" size={14} />
+                            </button>
+                            <button className="btn-icon" title="Download PDF" onClick={() => downloadStudentReport(r.student._id, 'pdf')}>
+                              <Icon name="download" size={14} style={{ opacity: 0.7 }} />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -173,9 +240,14 @@ export default function TeacherReports() {
                           <div className="item-title">{new Date(s.date).toLocaleDateString('en-BD', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</div>
                           <div className="item-sub">{s.presentCount}/{s.totalStudents} present</div>
                         </div>
-                        <button className="btn-icon" title="Download" onClick={() => downloadSessionReport(s._id)}>
-                          <Icon name="download" size={16} />
-                        </button>
+                        <div style={{ display: 'flex', gap: 4 }}>
+                          <button className="btn-icon" title="Download Excel" onClick={() => downloadSessionReport(s._id, 'excel')}>
+                            <Icon name="download" size={16} />
+                          </button>
+                          <button className="btn-icon" title="Download PDF" onClick={() => downloadSessionReport(s._id, 'pdf')}>
+                            <Icon name="download" size={16} style={{ opacity: 0.7 }} />
+                          </button>
+                        </div>
                       </div>
                     ))}
                   </div>

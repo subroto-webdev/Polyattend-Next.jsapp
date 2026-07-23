@@ -6,9 +6,17 @@ export const dynamic = 'force-dynamic';
 
 // GET /api/users/:id
 export async function GET(request, { params }) {
+  // SECURITY FIX: had no role restriction at all, so any authenticated
+  // student could fetch any other user's full profile (name, email,
+  // department, etc.) just by ID. Allow admin/teacher freely, and allow a
+  // user to fetch their own record, but block a student from reading
+  // someone else's profile this way.
   const auth = await requireAuth(request);
   if (auth.error) return auth.error;
   try {
+    if (auth.user.role === 'student' && auth.user._id.toString() !== params.id) {
+      return NextResponse.json({ success: false, message: 'Not authorized' }, { status: 403 });
+    }
     const user = await User.findById(params.id).select('-password').populate('departmentId', 'name code');
     if (!user) return NextResponse.json({ success: false, message: 'User not found' }, { status: 404 });
     return NextResponse.json({ success: true, user });

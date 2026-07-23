@@ -1,6 +1,6 @@
 'use client';
 import React, { useState, useEffect } from 'react';
-import api from '@/utils/api';
+import api, { getBlobErrorMessage } from '@/utils/api';
 import Icon from '@/components/common/Icon';
 import toast from 'react-hot-toast';
 
@@ -9,10 +9,58 @@ export default function TeacherExport() {
   const [sessions, setSessions] = useState([]);
   const [students, setStudents] = useState([]);
   const [studentSearch, setStudentSearch] = useState('');
+  // FIX (Requirement #3): search bars for the subject & session tabs too
+  const [subjectFilter, setSubjectFilter] = useState('');
+  const [sessionFilter, setSessionFilter] = useState('');
   const [activeTab, setActiveTab] = useState('subject'); // subject | session | student
   const [loadingSubjects, setLoadingSubjects] = useState(true);
   const [loadingSessions, setLoadingSessions] = useState(true);
   const [downloading, setDownloading] = useState(null); // stores id being downloaded
+
+  // FIX (hydration mismatch): this used to read `window.innerWidth` directly
+  // inside the render body. `window` doesn't exist during server rendering,
+  // and even where it's polyfilled, the server's and the browser's viewport
+  // width will never match — so React renders one thing on the server and a
+  // different thing on the client, which is exactly what triggers
+  // "Text content does not match server-rendered HTML". Reading it inside
+  // useEffect instead means the very first client render matches the server
+  // render exactly, and only updates afterwards (safe, since that happens
+  // after hydration completes).
+  const [isNarrowScreen, setIsNarrowScreen] = useState(false);
+  useEffect(() => {
+    const checkWidth = () => setIsNarrowScreen(window.innerWidth < 400);
+    checkWidth();
+    window.addEventListener('resize', checkWidth);
+    return () => window.removeEventListener('resize', checkWidth);
+  }, []);
+
+  const filteredSubjects = subjects.filter(s => {
+    const q = subjectFilter.trim().toLowerCase();
+    if (!q) return true;
+    return s.name?.toLowerCase().includes(q) || s.code?.toLowerCase().includes(q) || s.departmentId?.name?.toLowerCase().includes(q);
+  });
+
+  const filteredSessions = sessions.filter(s => {
+    const q = sessionFilter.trim().toLowerCase();
+    if (!q) return true;
+    return s.subjectId?.name?.toLowerCase().includes(q) || s.section?.toLowerCase().includes(q) ||
+      new Date(s.date).toLocaleDateString('en-BD').toLowerCase().includes(q);
+  });
+
+  // ── FIX (grouping request): group by Section wherever a list shows one,
+  // instead of a flat list.
+  const groupBySection = (items) => {
+    const groups = {};
+    items.forEach(item => {
+      const key = item.section || 'অজানা';
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(item);
+    });
+    return Object.keys(groups).sort().map(key => ({ section: key, items: groups[key] }));
+  };
+  const groupedSubjects = groupBySection(filteredSubjects);
+  const groupedSessions = groupBySection(filteredSessions);
+  const groupedStudents = groupBySection(students);
 
   useEffect(() => {
     api.get('/subjects')
@@ -37,41 +85,41 @@ export default function TeacherExport() {
     window.URL.revokeObjectURL(url);
   };
 
-  const downloadSubjectReport = async (subject) => {
-    setDownloading(subject._id);
+  const downloadSubjectReport = async (subject, format = 'excel') => {
+    setDownloading(`${subject._id}-${format}`);
     try {
-      const res = await api.get(`/reports/subject/${subject._id}`, { responseType: 'blob' });
-      triggerDownload(res.data, `${subject.code}_${subject.section}_report.xlsx`);
+      const res = await api.get(`/reports/subject/${subject._id}${format === 'pdf' ? '?format=pdf' : ''}`, { responseType: 'blob' });
+      triggerDownload(res.data, `${subject.code}_${subject.section}_report.${format === 'pdf' ? 'pdf' : 'xlsx'}`);
       toast.success(`"${subject.name}" report download হয়েছে!`);
-    } catch {
-      toast.error('Download ব্যর্থ হয়েছে');
+    } catch (err) {
+      toast.error(await getBlobErrorMessage(err, 'Download ব্যর্থ হয়েছে'));
     } finally {
       setDownloading(null);
     }
   };
 
-  const downloadSessionReport = async (session) => {
-    setDownloading(session._id);
+  const downloadSessionReport = async (session, format = 'excel') => {
+    setDownloading(`${session._id}-${format}`);
     try {
-      const res = await api.get(`/reports/class/${session._id}`, { responseType: 'blob' });
+      const res = await api.get(`/reports/class/${session._id}${format === 'pdf' ? '?format=pdf' : ''}`, { responseType: 'blob' });
       const dateStr = new Date(session.date).toLocaleDateString('en-BD').replace(/\//g, '-');
-      triggerDownload(res.data, `session_${session.subjectId?.code || 'report'}_${dateStr}.xlsx`);
+      triggerDownload(res.data, `session_${session.subjectId?.code || 'report'}_${dateStr}.${format === 'pdf' ? 'pdf' : 'xlsx'}`);
       toast.success('Session report download হয়েছে!');
-    } catch {
-      toast.error('Download ব্যর্থ হয়েছে');
+    } catch (err) {
+      toast.error(await getBlobErrorMessage(err, 'Download ব্যর্থ হয়েছে'));
     } finally {
       setDownloading(null);
     }
   };
 
-  const downloadStudentReport = async (student) => {
-    setDownloading(student._id);
+  const downloadStudentReport = async (student, format = 'excel') => {
+    setDownloading(`${student._id}-${format}`);
     try {
-      const res = await api.get(`/reports/student/${student._id}`, { responseType: 'blob' });
-      triggerDownload(res.data, `student_${student.studentId || student.name}_report.xlsx`);
+      const res = await api.get(`/reports/student/${student._id}${format === 'pdf' ? '?format=pdf' : ''}`, { responseType: 'blob' });
+      triggerDownload(res.data, `student_${student.studentId || student.name}_report.${format === 'pdf' ? 'pdf' : 'xlsx'}`);
       toast.success(`${student.name}-এর report download হয়েছে!`);
-    } catch {
-      toast.error('Download ব্যর্থ হয়েছে');
+    } catch (err) {
+      toast.error(await getBlobErrorMessage(err, 'Download ব্যর্থ হয়েছে'));
     } finally {
       setDownloading(null);
     }
@@ -125,7 +173,7 @@ export default function TeacherExport() {
               }}
             >
               <Icon name={tab.icon} size={14} />
-              <span style={{ display: window.innerWidth < 400 ? 'none' : undefined }}>{tab.label}</span>
+              <span style={{ display: isNarrowScreen ? 'none' : undefined }}>{tab.label}</span>
             </button>
           ))}
         </div>
@@ -142,32 +190,58 @@ export default function TeacherExport() {
             ) : subjects.length === 0 ? (
               <div className="card"><div className="empty"><Icon name="book" size={32} /><p>কোনো subject নেই</p></div></div>
             ) : (
-              <div className="card">
-                {subjects.map(s => (
-                  <div key={s._id} className="list-item">
-                    <div className="item-icon icon-green">
-                      <Icon name="book" size={18} />
+              <>
+                <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+                  <input
+                    className="form-input"
+                    placeholder="Subject নাম, code বা department দিয়ে খুঁজুন..."
+                    value={subjectFilter}
+                    onChange={e => setSubjectFilter(e.target.value)}
+                  />
+                </div>
+                {filteredSubjects.length === 0 ? (
+                  <div className="card"><div className="empty"><Icon name="search" size={32} /><p>কোনো subject পাওয়া যায়নি</p></div></div>
+                ) : groupedSubjects.map(group => (
+                  <div key={group.section} style={{ marginBottom: 14 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--txt2)', background: 'var(--bg3)', padding: '6px 12px', borderRadius: 8, marginBottom: 8 }}>
+                      Group: {group.section}
                     </div>
-                    <div className="item-content">
-                      <div className="item-title">{s.name} <span style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--txt2)' }}>({s.code})</span></div>
-                      <div className="item-sub">
-                        {s.departmentId?.name} • Sem {s.semester} • Sec {s.section} • {s.shift} Shift
-                      </div>
+                    <div className="card">
+                      {group.items.map(s => (
+                        <div key={s._id} className="list-item">
+                          <div className="item-icon icon-green">
+                            <Icon name="book" size={18} />
+                          </div>
+                          <div className="item-content">
+                            <div className="item-title">{s.name} <span style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--txt2)' }}>({s.code})</span></div>
+                            <div className="item-sub">
+                              {s.departmentId?.name} • Sem {s.semester} • Group {s.section} • {s.shift} Shift
+                            </div>
+                          </div>
+                          <div style={{ display: 'flex', gap: 6 }}>
+                            <button
+                              className="btn-secondary btn-sm"
+                              onClick={() => downloadSubjectReport(s, 'excel')}
+                              disabled={downloading === `${s._id}-excel`}
+                              title="Full Subject Excel Download"
+                            >
+                              {downloading === `${s._id}-excel` ? <div className="spinner spinner-sm" /> : <><Icon name="download" size={14} /> Excel</>}
+                            </button>
+                            <button
+                              className="btn-secondary btn-sm"
+                              onClick={() => downloadSubjectReport(s, 'pdf')}
+                              disabled={downloading === `${s._id}-pdf`}
+                              title="Full Subject PDF Download"
+                            >
+                              {downloading === `${s._id}-pdf` ? <div className="spinner spinner-sm" /> : <><Icon name="download" size={14} /> PDF</>}
+                            </button>
+                          </div>
+                        </div>
+                      ))}
                     </div>
-                    <button
-                      className="btn-secondary btn-sm"
-                      onClick={() => downloadSubjectReport(s)}
-                      disabled={downloading === s._id}
-                      title="Full Subject Excel Download"
-                    >
-                      {downloading === s._id
-                        ? <div className="spinner spinner-sm" />
-                        : <><Icon name="download" size={14} /> Excel</>
-                      }
-                    </button>
                   </div>
                 ))}
-              </div>
+              </>
             )}
           </>
         )}
@@ -184,33 +258,59 @@ export default function TeacherExport() {
             ) : sessions.length === 0 ? (
               <div className="card"><div className="empty"><Icon name="clipboard" size={32} /><p>কোনো completed session নেই</p></div></div>
             ) : (
-              <div className="card">
-                {sessions.map(s => (
-                  <div key={s._id} className="list-item">
-                    <div className="item-icon icon-blue">
-                      <Icon name="calendar" size={18} />
+              <>
+                <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+                  <input
+                    className="form-input"
+                    placeholder="Subject, section বা তারিখ দিয়ে খুঁজুন..."
+                    value={sessionFilter}
+                    onChange={e => setSessionFilter(e.target.value)}
+                  />
+                </div>
+                {filteredSessions.length === 0 ? (
+                  <div className="card"><div className="empty"><Icon name="search" size={32} /><p>কোনো session পাওয়া যায়নি</p></div></div>
+                ) : groupedSessions.map(group => (
+                  <div key={group.section} style={{ marginBottom: 14 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--txt2)', background: 'var(--bg3)', padding: '6px 12px', borderRadius: 8, marginBottom: 8 }}>
+                      Group: {group.section}
                     </div>
-                    <div className="item-content">
-                      <div className="item-title">{s.subjectId?.name} — Sem {s.semester} {s.section}</div>
-                      <div className="item-sub">
-                        {new Date(s.date).toLocaleDateString('en-BD', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' })}
-                        {' '}• {s.presentCount}/{s.totalStudents} present
-                      </div>
+                    <div className="card">
+                      {group.items.map(s => (
+                        <div key={s._id} className="list-item">
+                          <div className="item-icon icon-blue">
+                            <Icon name="calendar" size={18} />
+                          </div>
+                          <div className="item-content">
+                            <div className="item-title">{s.subjectId?.name} — Sem {s.semester} {s.section}</div>
+                            <div className="item-sub">
+                              {new Date(s.date).toLocaleDateString('en-BD', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' })}
+                              {' '}• {s.presentCount}/{s.totalStudents} present
+                            </div>
+                          </div>
+                          <div style={{ display: 'flex', gap: 4 }}>
+                            <button
+                              className="btn-icon"
+                              onClick={() => downloadSessionReport(s, 'excel')}
+                              disabled={downloading === `${s._id}-excel`}
+                              title="Session Attendance Excel Download"
+                            >
+                              {downloading === `${s._id}-excel` ? <div className="spinner spinner-sm" /> : <Icon name="download" size={14} />}
+                            </button>
+                            <button
+                              className="btn-icon"
+                              onClick={() => downloadSessionReport(s, 'pdf')}
+                              disabled={downloading === `${s._id}-pdf`}
+                              title="Session Attendance PDF Download"
+                            >
+                              {downloading === `${s._id}-pdf` ? <div className="spinner spinner-sm" /> : <Icon name="download" size={14} style={{ opacity: 0.7 }} />}
+                            </button>
+                          </div>
+                        </div>
+                      ))}
                     </div>
-                    <button
-                      className="btn-secondary btn-sm"
-                      onClick={() => downloadSessionReport(s)}
-                      disabled={downloading === s._id}
-                      title="Session Attendance Download"
-                    >
-                      {downloading === s._id
-                        ? <div className="spinner spinner-sm" />
-                        : <Icon name="download" size={14} />
-                      }
-                    </button>
                   </div>
                 ))}
-              </div>
+              </>
             )}
           </>
         )}
@@ -235,39 +335,53 @@ export default function TeacherExport() {
                 <Icon name="search" size={16} />
               </button>
             </div>
-            <div className="card">
-              {students.length === 0 ? (
+            {students.length === 0 ? (
+              <div className="card">
                 <div className="empty">
                   <Icon name="search" size={32} />
                   <p>Student খুঁজুন, তারপর report download করুন</p>
                 </div>
-              ) : (
-                students.map(s => (
-                  <div key={s._id} className="list-item">
-                    <div className="item-icon icon-amber">
-                      <Icon name="users" size={18} />
-                    </div>
-                    <div className="item-content">
-                      <div className="item-title">{s.name}</div>
-                      <div className="item-sub">
-                        {s.studentId} • {s.departmentId?.name} • Sem {s.semester} • Sec {s.section}
+              </div>
+            ) : groupedStudents.map(group => (
+              <div key={group.section} style={{ marginBottom: 14 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--txt2)', background: 'var(--bg3)', padding: '6px 12px', borderRadius: 8, marginBottom: 8 }}>
+                  Group: {group.section}
+                </div>
+                <div className="card">
+                  {group.items.map(s => (
+                    <div key={s._id} className="list-item">
+                      <div className="item-icon icon-amber">
+                        <Icon name="users" size={18} />
+                      </div>
+                      <div className="item-content">
+                        <div className="item-title">{s.name}</div>
+                        <div className="item-sub">
+                          {s.studentId} • {s.departmentId?.name} • Sem {s.semester} • Group {s.section}
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <button
+                          className="btn-secondary btn-sm"
+                          onClick={() => downloadStudentReport(s, 'excel')}
+                          disabled={downloading === `${s._id}-excel`}
+                          title="Student Report Excel Download"
+                        >
+                          {downloading === `${s._id}-excel` ? <div className="spinner spinner-sm" /> : <><Icon name="download" size={14} /> Excel</>}
+                        </button>
+                        <button
+                          className="btn-secondary btn-sm"
+                          onClick={() => downloadStudentReport(s, 'pdf')}
+                          disabled={downloading === `${s._id}-pdf`}
+                          title="Student Report PDF Download"
+                        >
+                          {downloading === `${s._id}-pdf` ? <div className="spinner spinner-sm" /> : <><Icon name="download" size={14} /> PDF</>}
+                        </button>
                       </div>
                     </div>
-                    <button
-                      className="btn-secondary btn-sm"
-                      onClick={() => downloadStudentReport(s)}
-                      disabled={downloading === s._id}
-                      title="Student Report Download"
-                    >
-                      {downloading === s._id
-                        ? <div className="spinner spinner-sm" />
-                        : <><Icon name="download" size={14} /> Excel</>
-                      }
-                    </button>
-                  </div>
-                ))
-              )}
-            </div>
+                  ))}
+                </div>
+              </div>
+            ))}
           </>
         )}
       </div>

@@ -8,12 +8,21 @@ import SessionCheckIn from './SessionCheckIn';
 export default function StudentHome() {
   const { user } = useAuth();
   const [summary, setSummary] = useState(null);
+  const [threshold, setThreshold] = useState(70);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (user?._id) {
-      api.get(`/attendance/student/${user._id}`)
-        .then(r => setSummary(r.data))
+      Promise.all([
+        api.get(`/attendance/student/${user._id}`),
+        api.get('/settings').catch(() => null), // non-fatal if settings fetch fails
+      ])
+        .then(([attRes, settingsRes]) => {
+          setSummary(attRes.data);
+          if (settingsRes?.data?.settings?.attendanceThreshold != null) {
+            setThreshold(settingsRes.data.settings.attendanceThreshold);
+          }
+        })
         .catch(console.error)
         .finally(() => setLoading(false));
     }
@@ -22,7 +31,10 @@ export default function StudentHome() {
   if (loading) return <div className="loading"><div className="spinner" /></div>;
 
   const overall = summary?.overall || {};
-  const lowAtt = summary?.summary?.filter(s => s.percentage < 75) || [];
+  // FIX: this used to be hard-coded at 75%. Now it uses the admin-configurable
+  // threshold from Settings (default 70%) — the same number used for the
+  // per-subject "exam eligibility" warning below.
+  const lowAtt = summary?.summary?.filter(s => s.percentage < threshold) || [];
 
   return (
     <div className="page">
@@ -35,7 +47,7 @@ export default function StudentHome() {
         <div>
           <div className="profile-name">{user?.name}</div>
           <div className="profile-meta">
-            {user?.studentId} • {user?.departmentId?.name} • Sem {user?.semester} • Sec {user?.section}
+            {user?.studentId} • {user?.departmentId?.name} • Sem {user?.semester} • Group {user?.section}
           </div>
         </div>
       </div>
@@ -59,7 +71,7 @@ export default function StudentHome() {
         <div className="stat-card stat-red">
           <div className="stat-icon"><Icon name="alert" size={18} /></div>
           <div className="stat-val">{lowAtt.length}</div>
-          <div className="stat-lbl">Below 75%</div>
+          <div className="stat-lbl">Below {threshold}%</div>
         </div>
       </div>
 
@@ -67,7 +79,7 @@ export default function StudentHome() {
         <div className="info-banner warn-banner mb-3">
           <Icon name="alert" size={16} />
           <span className="info-text">
-            <strong>{lowAtt.length}টি subject</strong>-এ attendance 75%-এর নিচে। এখনই উপস্থিত থাকুন!
+            <strong>{lowAtt.length}টি subject</strong>-এ attendance {threshold}%-এর নিচে — এই subject-এ exam দিতে পারবেন না। এখনই উপস্থিত থাকুন!
           </span>
         </div>
       )}
@@ -80,6 +92,7 @@ export default function StudentHome() {
           const pct = s.percentage;
           const color = pct >= 75 ? 'var(--primary)' : pct >= 60 ? 'var(--accent)' : 'var(--danger)';
           const fillClass = pct >= 75 ? 'fill-green' : pct >= 60 ? 'fill-amber' : 'fill-red';
+          const ineligible = pct < threshold;
           return (
             <div key={i} style={{ padding: '13px 16px', borderBottom: '1px solid var(--border)' }}>
               <div className="progress-row">
@@ -94,6 +107,17 @@ export default function StudentHome() {
               <div style={{ fontSize: 11, color: 'var(--txt3)', marginTop: 4 }}>
                 {s.subject?.code} • {s.present} present, {s.absent} absent
               </div>
+              {/* FEATURE: exam-eligibility warning badge, threshold set by admin */}
+              {ineligible && (
+                <div style={{
+                  marginTop: 8, display: 'flex', alignItems: 'center', gap: 6,
+                  background: 'var(--danger-light)', color: 'var(--danger)',
+                  padding: '6px 10px', borderRadius: 8, fontSize: 12, fontWeight: 600,
+                }}>
+                  <Icon name="alert" size={14} />
+                  আপনি এই subject-এ exam দিতে পারবেন না, attendance {pct}%
+                </div>
+              )}
             </div>
           );
         })}

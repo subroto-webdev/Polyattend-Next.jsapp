@@ -29,7 +29,7 @@ export async function POST(request) {
     const session = await Session.findById(sessionId).populate('subjectId', 'shift');
     if (!session) return NextResponse.json({ success: false, message: 'Session not found' }, { status: 404 });
     if (session.status !== 'active') return NextResponse.json({ success: false, message: 'Session is not active' }, { status: 400 });
-    if (session.teacherId.toString() !== auth.user._id.toString()) {
+    if (auth.user.role === 'teacher' && session.teacherId.toString() !== auth.user._id.toString()) {
       return NextResponse.json({ success: false, message: 'Not your session' }, { status: 403 });
     }
 

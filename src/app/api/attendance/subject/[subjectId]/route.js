@@ -9,7 +9,11 @@ export const dynamic = 'force-dynamic';
 
 // GET /api/attendance/subject/:subjectId
 export async function GET(request, { params }) {
-  const auth = await requireAuth(request);
+  // SECURITY FIX: this returned the full class roster + every student's
+  // attendance history for a subject to ANY authenticated user, including
+  // students who aren't even in that class. Restrict to teacher/admin —
+  // students use /api/attendance/student/:studentId for their own view.
+  const auth = await requireAuth(request, ['teacher', 'admin']);
   if (auth.error) return auth.error;
   try {
     const { subjectId } = params;

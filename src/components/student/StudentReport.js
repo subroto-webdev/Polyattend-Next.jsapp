@@ -1,28 +1,29 @@
 'use client';
 import React, { useState } from 'react';
-import api from '@/utils/api';
+import api, { getBlobErrorMessage } from '@/utils/api';
 import Icon from '@/components/common/Icon';
 import { useAuth } from '@/context/AuthContext';
 import toast from 'react-hot-toast';
 
 export default function StudentReport() {
   const { user } = useAuth();
-  const [downloading, setDownloading] = useState(false);
+  const [downloading, setDownloading] = useState(null); // 'excel' | 'pdf' | null
 
-  const downloadReport = async () => {
-    setDownloading(true);
+  const downloadReport = async (format = 'excel') => {
+    setDownloading(format);
     try {
-      const res = await api.get(`/reports/student/${user._id}`, { responseType: 'blob' });
+      const res = await api.get(`/reports/student/${user._id}${format === 'pdf' ? '?format=pdf' : ''}`, { responseType: 'blob' });
       const url = window.URL.createObjectURL(new Blob([res.data]));
       const a = document.createElement('a');
       a.href = url;
-      a.download = `attendance_${user.studentId || user.name}.xlsx`;
+      a.download = `attendance_${user.studentId || user.name}.${format === 'pdf' ? 'pdf' : 'xlsx'}`;
       a.click();
+      window.URL.revokeObjectURL(url);
       toast.success('Report download শুরু হয়েছে!');
     } catch (err) {
-      toast.error('Download failed');
+      toast.error(await getBlobErrorMessage(err));
     } finally {
-      setDownloading(false);
+      setDownloading(null);
     }
   };
 
@@ -30,7 +31,7 @@ export default function StudentReport() {
     <div className="page">
       <div className="page-header">
         <h2 className="page-title">My Report</h2>
-        <p className="page-sub">Excel ফরম্যাটে attendance report download করুন</p>
+        <p className="page-sub">Excel অথবা PDF ফরম্যাটে attendance report download করুন</p>
       </div>
 
       <div className="card" style={{ padding: 24, textAlign: 'center' }}>
@@ -44,7 +45,7 @@ export default function StudentReport() {
         </div>
         <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>Personal Attendance Report</h3>
         <p style={{ color: 'var(--txt2)', fontSize: 13, marginBottom: 24, lineHeight: 1.6 }}>
-          আপনার সমস্ত subject-এর attendance, তারিখ ভিত্তিক রেকর্ড, এবং পরিসংখ্যান সহ Excel রিপোর্ট।
+          আপনার সমস্ত subject-এর attendance, তারিখ ভিত্তিক রেকর্ড, এবং পরিসংখ্যান সহ Excel অথবা PDF রিপোর্ট।
         </p>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 12, maxWidth: 300, margin: '0 auto 24px', textAlign: 'left' }}>
@@ -61,12 +62,20 @@ export default function StudentReport() {
           ))}
         </div>
 
-        <button className="btn-primary" style={{ maxWidth: 260, margin: '0 auto' }} onClick={downloadReport} disabled={downloading}>
-          {downloading
-            ? <><div className="spinner spinner-sm" /> Generating...</>
-            : <><Icon name="download" size={16} /> Excel Report Download</>
-          }
-        </button>
+        <div style={{ display: 'flex', gap: 10, maxWidth: 320, margin: '0 auto', justifyContent: 'center' }}>
+          <button className="btn-primary" style={{ flex: 1 }} onClick={() => downloadReport('excel')} disabled={!!downloading}>
+            {downloading === 'excel'
+              ? <><div className="spinner spinner-sm" /> Generating...</>
+              : <><Icon name="download" size={16} /> Excel</>
+            }
+          </button>
+          <button className="btn-secondary" style={{ flex: 1 }} onClick={() => downloadReport('pdf')} disabled={!!downloading}>
+            {downloading === 'pdf'
+              ? <><div className="spinner spinner-sm" /> Generating...</>
+              : <><Icon name="download" size={16} /> PDF</>
+            }
+          </button>
+        </div>
       </div>
 
       <div className="info-banner" style={{ marginTop: 16 }}>

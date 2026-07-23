@@ -11,6 +11,8 @@ const navItems = [
   { label: 'Holidays', icon: 'calendar', path: '/admin/holidays' },
   { section: 'Analytics' },
   { label: 'Reports', icon: 'chart', path: '/admin/reports' },
+  { section: 'System' },
+  { label: 'Settings', icon: 'settings', path: '/admin/settings' },
 ];
 
 export default function AdminRootLayout({ children }) {

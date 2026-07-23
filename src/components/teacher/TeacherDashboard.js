@@ -71,7 +71,7 @@ export default function TeacherDashboard() {
             <div key={s._id} className="card" style={{ padding: '14px 16px' }}>
               <div className="subject-code">{s.code}</div>
               <div className="subject-name">{s.name}</div>
-              <div className="subject-meta">{s.departmentId?.name} • Semester {s.semester} • Section {s.section}</div>
+              <div className="subject-meta">{s.departmentId?.name} • Semester {s.semester} • Group {s.section}</div>
             </div>
           ))}
         </div>
@@ -85,7 +85,7 @@ export default function TeacherDashboard() {
               <div key={s._id} className="list-item" style={{ cursor: 'default' }}>
                 <div className="item-icon icon-green"><Icon name="check" size={18} /></div>
                 <div className="item-content">
-                  <div className="item-title">{s.subjectId?.name} — Sec {s.section}</div>
+                  <div className="item-title">{s.subjectId?.name} — Group {s.section}</div>
                   <div className="item-sub">{s.departmentId?.name} • {new Date(s.date).toLocaleDateString('en-BD')}</div>
                 </div>
                 <div className="item-right">

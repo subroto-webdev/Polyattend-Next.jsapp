@@ -24,10 +24,16 @@ export async function GET(request) {
     if (section) filter.section = section;
     if (shift) filter.shift = shift;
     if (search) {
+      // SECURITY FIX: `search` was interpolated directly into $regex. A
+      // crafted value (e.g. unbalanced parentheses, or a catastrophic
+      // backtracking pattern like many nested repeats) could crash the
+      // query or degrade into a ReDoS. Escape regex metacharacters so the
+      // search term is always treated as a literal substring.
+      const escaped = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       filter.$or = [
-        { name: { $regex: search, $options: 'i' } },
-        { email: { $regex: search, $options: 'i' } },
-        { studentId: { $regex: search, $options: 'i' } },
+        { name: { $regex: escaped, $options: 'i' } },
+        { email: { $regex: escaped, $options: 'i' } },
+        { studentId: { $regex: escaped, $options: 'i' } },
       ];
     }
 

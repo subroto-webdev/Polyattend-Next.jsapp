@@ -42,7 +42,7 @@ export default function StudentQR() {
 
       ctx.fillStyle = 'rgba(255,255,255,0.4)';
       ctx.font = '13px sans-serif';
-      ctx.fillText(`${user.departmentId?.name} | Sem ${user.semester} | Sec ${user.section}`, W / 2, 445);
+      ctx.fillText(`${user.departmentId?.name} | Sem ${user.semester} | Group ${user.section}`, W / 2, 445);
 
       const link = document.createElement('a');
       link.download = `QR_${user.name}.png`;
@@ -74,7 +74,7 @@ export default function StudentQR() {
             <div style={{ display: 'flex', justifyContent: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
               <span className="tag tag-green">{user.departmentId?.name}</span>
               <span className="tag tag-blue">Sem {user.semester}</span>
-              <span className="tag tag-amber">Sec {user.section}</span>
+              <span className="tag tag-amber">Group {user.section}</span>
             </div>
             <button className="btn btn-primary" style={{ width: '100%' }} onClick={handleDownload} disabled={downloading}>
               <Icon name="download" size={16} />

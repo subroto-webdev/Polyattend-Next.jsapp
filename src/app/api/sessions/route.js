@@ -3,6 +3,7 @@ import Session from '@/lib/models/Session';
 import User from '@/lib/models/User';
 import Subject from '@/lib/models/Subject';
 import { requireAuth, errorResponse } from '@/lib/auth';
+import { notifyBulk, classStartedEmail } from '@/lib/notify';
 
 export const dynamic = 'force-dynamic';
 
@@ -47,7 +48,9 @@ export async function POST(request) {
     const shiftFilter = { role: 'student', departmentId, semester: parseInt(semester), section, isActive: true };
     if (subjectShift) shiftFilter.shift = subjectShift;
 
-    const totalStudents = await User.countDocuments(shiftFilter);
+    // Need the actual student docs (for email addresses), not just a count.
+    const classStudents = await User.find(shiftFilter).select('name email');
+    const totalStudents = classStudents.length;
 
     const session = await Session.create({
       teacherId: auth.user._id, departmentId, subjectId,
@@ -56,6 +59,26 @@ export async function POST(request) {
 
     const populated = await Session.findById(session._id)
       .populate('teacherId', 'name').populate('departmentId', 'name code').populate('subjectId', 'name code');
+
+    // FEATURE: notify every student in this class that the session has
+    // started, so they know to mark/self-check-in their attendance.
+    // IMPORTANT: this is awaited (not fire-and-forget) on purpose — in a
+    // serverless environment (e.g. Vercel), the function can be frozen or
+    // torn down right after the response is sent, so a "start sending in
+    // the background" call isn't reliably guaranteed to finish. Awaiting
+    // here does add latency to "Start Session" proportional to class size,
+    // but it's the only way to be sure the emails actually go out. It's
+    // wrapped so a slow/broken mail provider still can't fail session
+    // creation itself — the session is already saved either way.
+    try {
+      await notifyBulk(classStudents, () => classStartedEmail({
+        subjectName: subject.name,
+        subjectCode: subject.code,
+        teacherName: populated.teacherId?.name,
+      }));
+    } catch (err) {
+      console.error('Class-started email batch failed:', err);
+    }
 
     return NextResponse.json({ success: true, session: populated }, { status: 201 });
   } catch (error) { return errorResponse(error); }
