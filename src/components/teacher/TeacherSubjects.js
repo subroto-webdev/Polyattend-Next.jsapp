@@ -124,99 +124,121 @@ export default function TeacherSubjects() {
 
       {showModal && (
         <div
-          className="fixed inset-0 z-[200] bg-slate-900/50 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4"
+          className="fixed inset-0 z-[200] bg-slate-900/50 backdrop-blur-sm overflow-y-auto"
           onClick={e => e.target === e.currentTarget && setShowModal(false)}
         >
-          <div className="w-full sm:max-w-md bg-white rounded-t-3xl sm:rounded-3xl shadow-elevated max-h-[92vh] overflow-y-auto animate-fade-in">
-            <div className="flex justify-center pt-3 sm:hidden">
-              <div className="w-10 h-1.5 rounded-full bg-slate-200" />
-            </div>
-
-            <div className="px-6 pt-5 pb-2 flex items-center justify-between">
-              <h3 className="text-lg font-bold text-slate-900">
-                {editItem ? 'Subject Edit করুন' : 'নতুন Subject তৈরি করুন'}
-              </h3>
-              <button
-                onClick={() => setShowModal(false)}
-                className="w-8 h-8 rounded-full flex items-center justify-center text-slate-400 hover:bg-slate-100 hover:text-slate-600"
-              >
-                <Icon name="x" size={16} />
-              </button>
-            </div>
-
-            <div className="px-6 pb-6 space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1.5">Subject Name *</label>
-                <input
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-brand-500 transition"
-                  placeholder="যেমন: Data Structure"
-                  value={form.name}
-                  onChange={set('name')}
-                />
+          {/* FIX: the modal used to be centered with `items-center` directly
+              inside this fixed, non-scrolling overlay. When the modal's
+              content was taller than the browser window (a short window, or
+              zoomed-in text), centering pushed its TOP half — the header and
+              "Subject Name" field — off the top edge of the screen, with no
+              way to scroll up and reach it (this outer div wasn't scrollable
+              itself). Now this outer div is the actual scroll container
+              (`overflow-y-auto`), and an inner `min-h-full` flex wrapper does
+              the centering — so if the modal is ever taller than the
+              viewport, the whole page scrolls instead of clipping content
+              off-screen. */}
+          <div className="min-h-full flex items-end sm:items-center justify-center p-0 sm:p-4">
+            <div className="w-full sm:max-w-md bg-white rounded-t-3xl sm:rounded-3xl shadow-elevated my-0 sm:my-8 max-h-[92vh] overflow-y-auto animate-fade-in">
+              <div className="flex justify-center pt-3 sm:hidden">
+                <div className="w-10 h-1.5 rounded-full bg-slate-200" />
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1.5">Subject Code *</label>
-                <input
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-brand-500 transition"
-                  placeholder="যেমন: CST-301"
-                  value={form.code}
-                  onChange={set('code')}
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1.5">Department *</label>
-                <select
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-brand-500 transition appearance-none"
-                  value={form.departmentId}
-                  onChange={set('departmentId')}
+              <div className="px-6 pt-5 pb-2 flex items-center justify-between">
+                <h3 className="text-lg font-bold text-slate-900">
+                  {editItem ? 'Subject Edit করুন' : 'নতুন Subject তৈরি করুন'}
+                </h3>
+                <button
+                  onClick={() => setShowModal(false)}
+                  className="w-8 h-8 rounded-full flex items-center justify-center text-slate-400 hover:bg-slate-100 hover:text-slate-600"
                 >
-                  <option value="">-- Department বেছে নিন --</option>
-                  {departments.map(d => <option key={d._id} value={d._id}>{d.name} ({d.code})</option>)}
-                </select>
+                  <Icon name="x" size={16} />
+                </button>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="px-6 pb-6 space-y-4">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-600 mb-1.5">Semester *</label>
-                  <select
-                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-brand-500 transition appearance-none"
-                    value={form.semester}
-                    onChange={set('semester')}
-                  >
-                    <option value="">--</option>
-                    {semesterOptions.map(s => <option key={s} value={s}>{ordinal(s)}</option>)}
-                  </select>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1.5">Subject Name *</label>
+                  <input
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-brand-500 transition"
+                    placeholder="যেমন: Data Structure"
+                    value={form.name}
+                    onChange={set('name')}
+                  />
                 </div>
+
                 <div>
-                  <label className="block text-xs font-semibold text-slate-600 mb-1.5">Group *</label>
-                  <select
-                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-brand-500 transition appearance-none"
-                    value={form.section}
-                    onChange={set('section')}
-                  >
-                    <option value="">--</option>
-                    {['A', 'B', 'C', 'D'].map(s => <option key={s} value={s}>Group {s}</option>)}
-                  </select>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1.5">Subject Code *</label>
+                  <input
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-brand-500 transition"
+                    placeholder="যেমন: CST-301"
+                    value={form.code}
+                    onChange={set('code')}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1.5">Department *</label>
+                  <div className="relative">
+                    <select
+                      className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-brand-500 transition appearance-none pr-9"
+                      value={form.departmentId}
+                      onChange={set('departmentId')}
+                    >
+                      <option value="">-- Department বেছে নিন --</option>
+                      {departments.map(d => <option key={d._id} value={d._id}>{d.name} ({d.code})</option>)}
+                    </select>
+                    <Icon name="chevronLeft" size={14} className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 -rotate-90 text-slate-400" />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1.5">Semester *</label>
+                    <div className="relative">
+                      <select
+                        className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-brand-500 transition appearance-none pr-9"
+                        value={form.semester}
+                        onChange={set('semester')}
+                      >
+                        <option value="">--</option>
+                        {semesterOptions.map(s => <option key={s} value={s}>{ordinal(s)}</option>)}
+                      </select>
+                      <Icon name="chevronLeft" size={14} className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 -rotate-90 text-slate-400" />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1.5">Group *</label>
+                    <div className="relative">
+                      <select
+                        className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-brand-500 transition appearance-none pr-9"
+                        value={form.section}
+                        onChange={set('section')}
+                      >
+                        <option value="">--</option>
+                        {['A', 'B', 'C', 'D'].map(s => <option key={s} value={s}>Group {s}</option>)}
+                      </select>
+                      <Icon name="chevronLeft" size={14} className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 -rotate-90 text-slate-400" />
+                    </div>
+                  </div>
                 </div>
               </div>
-            </div>
 
-            <div className="sticky bottom-0 bg-white border-t border-slate-100 px-6 py-4 flex gap-3">
-              <button
-                onClick={() => setShowModal(false)}
-                className="flex-1 rounded-xl border border-slate-200 text-slate-600 font-semibold py-2.5 hover:bg-slate-50 transition-colors"
-              >
-                বাতিল
-              </button>
-              <button
-                onClick={handleSubmit}
-                disabled={saving}
-                className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-brand-600 hover:bg-brand-700 disabled:bg-slate-300 text-white font-semibold py-2.5 shadow-brand transition-colors"
-              >
-                {saving ? <><div className="spinner spinner-sm" /> সংরক্ষণ...</> : editItem ? 'Update করুন' : 'তৈরি করুন'}
-              </button>
+              <div className="sticky bottom-0 bg-white border-t border-slate-100 px-6 py-4 flex gap-3">
+                <button
+                  onClick={() => setShowModal(false)}
+                  className="flex-1 rounded-xl border border-slate-200 text-slate-600 font-semibold py-2.5 hover:bg-slate-50 transition-colors"
+                >
+                  বাতিল
+                </button>
+                <button
+                  onClick={handleSubmit}
+                  disabled={saving}
+                  className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-brand-600 hover:bg-brand-700 disabled:bg-slate-300 text-white font-semibold py-2.5 shadow-brand transition-colors"
+                >
+                  {saving ? <><div className="spinner spinner-sm" /> সংরক্ষণ...</> : editItem ? 'Update করুন' : 'তৈরি করুন'}
+                </button>
+              </div>
             </div>
           </div>
         </div>

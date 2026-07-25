@@ -33,7 +33,8 @@ export function confirmLeaveActiveSession() {
   if (!activeGuard) return true;
   return window.confirm(
     `⚠️ "${activeGuard.label}" Session এখনও চলছে!\n\n` +
-    `Session শেষ (End) না করে পেজ থেকে বের হলে attendance ঠিকমতো সংরক্ষণ নাও হতে পারে এবং students self attendance দিতেই থাকবে।\n\n` +
+    `আগে Attendance শেষ করে Save করুন, তারপর অন্য পেজে/ট্যাবে যান।\n\n` +
+    `এখনই Session শেষ না করে বের হলে attendance সংরক্ষণ নাও হতে পারে এবং students self-attendance দিতেই থাকবে।\n\n` +
     `আপনি কি তবুও Session শেষ না করেই বের হতে চান?`
   );
 }

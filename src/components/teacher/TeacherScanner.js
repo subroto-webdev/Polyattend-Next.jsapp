@@ -141,38 +141,21 @@ export default function TeacherScanner() {
       return;
     }
 
-    // FIX: this call previously left the acquired camera stream running.
-    // html5-qrcode's own Html5Qrcode.start() then tried to open the *same*
-    // camera again a moment later and failed with "NotReadableError: Could
-    // not start video source" because the device was still held by this
-    // stream — which is exactly why teachers could never get past "Camera
-    // চালু করুন" to actually scan. We only need this call to *check*
-    // permission, so we immediately stop every track before continuing.
-    try {
-      const permCheckStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-      permCheckStream.getTracks().forEach(track => track.stop());
-    } catch (err) {
-      // If environment camera request failed, try checking if user camera is allowed
-      try {
-        const permCheckStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
-        permCheckStream.getTracks().forEach(track => track.stop());
-      } catch {
-        const msg = 'Camera অ্যাক্সেস দেওয়া হয়নি। Browser settings থেকে Camera permission চালু করুন।';
-        setCameraError(msg);
-        toast.error(msg);
-        return;
-      }
-    }
-
-    // Give the browser a brief moment to fully release the camera device
-    // after stopping the permission-check stream above, before html5-qrcode
-    // tries to open it again.
-    await new Promise(r => setTimeout(r, 150));
-
+    // FIX (speed): this used to call getUserMedia() first just to check
+    // camera permission, then stop that stream, then let html5-qrcode open
+    // the camera a SECOND time. Opening camera hardware twice in a row is
+    // slow on real devices (each open can take anywhere from a few hundred
+    // ms to a couple of seconds) — doubling it was the main reason "Camera
+    // চালু করুন" felt sluggish. Html5Qrcode.start() below already requests
+    // camera permission itself as part of opening it once, and the existing
+    // catch block below already turns a permission/NotFound/NotReadable
+    // error into a friendly Bangla message — so the separate pre-check
+    // wasn't actually needed for correctness, only for a slightly earlier
+    // error message, at the cost of being roughly twice as slow every time.
     setScanning(true);
 
     // Wait one tick so the #qr-reader div is visible in DOM with proper dimensions
-    await new Promise(r => setTimeout(r, 80));
+    await new Promise(r => setTimeout(r, 50));
 
     try {
       const containerWidth = document.getElementById('qr-reader')?.offsetWidth || 300;
@@ -212,10 +195,23 @@ export default function TeacherScanner() {
       }
     } catch (err) {
       setScanning(false);
+      // FIX: this used to check err.message.includes('permission') — but
+      // real browser errors are usually named NotAllowedError with a
+      // message like "Permission denied" (capital P), so the old
+      // lowercase-only check silently never matched and everyone just saw
+      // the generic fallback message instead of a specific, actionable one.
+      // Checking err.name (what browsers actually set) and lower-casing the
+      // message fixes that.
+      const name = err?.name || '';
+      const msg2 = (err?.message || '').toLowerCase();
       let msg = 'Camera চালু করতে সমস্যা হয়েছে';
-      if (err?.message?.includes('permission')) msg = 'Camera permission নেই। Browser settings চেক করুন।';
-      else if (err?.message?.includes('NotFoundError')) msg = 'কোনো Camera পাওয়া যায়নি।';
-      else if (err?.message?.includes('NotReadableError')) msg = 'Camera অন্য app ব্যবহার করছে।';
+      if (name === 'NotAllowedError' || msg2.includes('permission') || msg2.includes('denied')) {
+        msg = 'Camera permission দেওয়া হয়নি। Browser settings থেকে Camera permission চালু করে আবার চেষ্টা করুন।';
+      } else if (name === 'NotFoundError' || msg2.includes('notfounderror')) {
+        msg = 'কোনো Camera পাওয়া যায়নি।';
+      } else if (name === 'NotReadableError' || msg2.includes('notreadableerror')) {
+        msg = 'Camera অন্য app/ট্যাব ব্যবহার করছে। অন্য app বন্ধ করে আবার চেষ্টা করুন।';
+      }
       setCameraError(msg);
       toast.error(msg);
     }

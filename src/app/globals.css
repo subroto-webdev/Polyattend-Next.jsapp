@@ -1643,6 +1643,16 @@ tbody tr:nth-child(n+7) {
   justify-content: center;
   backdrop-filter: blur(4px);
   animation: fadeIn 0.18s ease;
+  /* FIX: this container had no way to scroll. When a modal's content was
+     taller than a short browser window, centering it (`align-items: center`
+     below md) pushed its TOP — the title bar and first field — up above the
+     visible screen with literally no way to reach it, since this backdrop
+     itself wasn't a scroll container. Every modal built on .modal-backdrop
+     had this same bug (Subjects, Users, Departments, Holidays, etc.), not
+     just one screen. Making the backdrop itself scrollable fixes all of
+     them at once, without changing how it looks in the normal case where
+     the modal already fits on screen. */
+  overflow-y: auto;
 }
 
 .modal-sheet {
@@ -1655,6 +1665,7 @@ tbody tr:nth-child(n+7) {
   overflow-y: auto;
   animation: slideUp 0.28s cubic-bezier(0.16, 1, 0.3, 1);
   box-shadow: 0 -8px 40px rgba(0, 0, 0, 0.18);
+  flex-shrink: 0;
 }
 
 @media (min-width: 768px) {

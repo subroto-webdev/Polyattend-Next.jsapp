@@ -1,5 +1,34 @@
 import mongoose from 'mongoose';
 import Department from './models/Department';
+// ── CRITICAL FIX: "Schema hasn't been registered for model 'X'" ───────────
+// In serverless deployments (e.g. Vercel), each API route is bundled into
+// its own isolated function. A model only gets registered with Mongoose
+// (`mongoose.model('X', schema)`) when its file is actually imported
+// *somewhere in that function's bundle*. Many routes call `.populate('...')`
+// on a ref (e.g. Attendance.sessionId → 'Session') without ever importing
+// that model directly — this worked by accident locally (a single long-lived
+// dev server keeps every model registered once anything touches it) but
+// fails in production the moment a route's cold-start bundle doesn't happen
+// to include that model. This is exactly what caused errors like:
+//   "Schema hasn't been registered for model 'Session'. Use mongoose.model(name, schema)"
+// on the student attendance/report routes, and could affect any other
+// route's populate() the same way.
+//
+// The fix: import every model here, in the one file (`dbConnect`) that
+// literally every route already calls before touching the database. That
+// guarantees all schemas are registered first, everywhere, regardless of
+// which route cold-starts. Department was already imported here (for
+// seeding) — that's precisely why departmentId populates never had this
+// bug while sessionId/subjectId/studentId ones did.
+import './models/User';
+import './models/Subject';
+import './models/Session';
+import './models/Attendance';
+import './models/Holiday';
+import './models/Feedback';
+import './models/TeacherAssignment';
+import './models/PendingRegistration';
+import './models/Settings';
 
 const MONGODB_URI = process.env.MONGODB_URI;
 
