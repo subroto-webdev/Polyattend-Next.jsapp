@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
-import { confirmLeaveActiveSession, deactivateSessionGuard } from '@/utils/sessionGuard';
+import { blockIfSessionActive } from '@/utils/sessionGuard';
 import Icon from './Icon';
 
 export default function AppShell({ navItems, children }) {
@@ -14,17 +14,18 @@ export default function AppShell({ navItems, children }) {
   const isActive = (path) => pathname === path || (path !== `/${user?.role}` && pathname.startsWith(path + '/'));
 
   const handleNav = (path) => {
-    // FIX: teacher must not be able to silently navigate away from a live
-    // attendance session — warn first, same as Back/Refresh/Logout.
-    if (!confirmLeaveActiveSession()) return;
-    deactivateSessionGuard();
+    // FIX: this used to be a skippable confirm() ("leave anyway?"). A
+    // teacher could just click through it, which defeats the point. Now
+    // it's a true hard block — while a session is active, navigation is
+    // simply cancelled with no bypass; ending the session is the only way
+    // through.
+    if (blockIfSessionActive()) return;
     router.push(path);
     setSidebarOpen(false);
   };
 
   const handleLogout = () => {
-    if (!confirmLeaveActiveSession()) return;
-    deactivateSessionGuard();
+    if (blockIfSessionActive()) return;
     logout();
     router.push('/login');
   };

@@ -143,20 +143,38 @@ export default function TeacherTakeAttendance() {
     setAttendance(updated);
   };
 
-  const saveAndEndSession = async () => {
+  // FEATURE: save attendance progress WITHOUT ending the session — lets a
+  // teacher mark students as they arrive over the course of the class and
+  // save periodically, without being forced to close the session yet.
+  const saveAttendanceOnly = async () => {
     if (!session) return;
     setSaving(true);
     try {
-      // Save manual attendance
       const attendanceList = students.map(s => ({ studentId: s._id, status: attendance[s._id]?.status || 'absent' }));
       await api.post('/attendance/manual', { sessionId: session._id, attendanceList });
-      // End session
+      toast.success('Attendance সংরক্ষণ হয়েছে (Session এখনও চলছে)');
+    } catch (err) { toast.error(err.response?.data?.message || 'Error'); }
+    finally { setSaving(false); }
+  };
+
+  // FEATURE: explicit "End Session" — saves whatever is currently marked one
+  // last time, then closes the session. After this, the session can no
+  // longer accept attendance (neither manual marks here, nor QR/self
+  // check-in) — a brand new session has to be started for the next class.
+  const endSession = async () => {
+    if (!session) return;
+    setSaving(true);
+    try {
+      const attendanceList = students.map(s => ({ studentId: s._id, status: attendance[s._id]?.status || 'absent' }));
+      await api.post('/attendance/manual', { sessionId: session._id, attendanceList });
       await api.put(`/sessions/${session._id}/end`);
-      toast.success('Attendance সংরক্ষিত ও session শেষ হয়েছে!');
+      toast.success('Attendance সংরক্ষিত ও Session শেষ হয়েছে!');
       setStep('done');
     } catch (err) { toast.error(err.response?.data?.message || 'Error'); }
     finally { setSaving(false); }
   };
+  // Kept as an alias so nothing else in this file needs to change.
+  const saveAndEndSession = endSession;
 
   const resetAll = () => {
     setSession(null); setSelectedSubject(null);
@@ -222,17 +240,21 @@ export default function TeacherTakeAttendance() {
         <div className="flex gap-2 shrink-0 items-center">
           <span className="text-xs font-semibold bg-brand-100 text-brand-700 rounded-full px-2.5 py-1">{presentCount}P</span>
           <span className="text-xs font-semibold bg-red-100 text-red-700 rounded-full px-2.5 py-1">{absentCount}A</span>
-          {/* Extra quick-access submit button in the top bar, in addition to the one at the bottom of the list */}
+          {/* Quick-access Save in the top bar, in addition to the full action bar at the bottom */}
           <button
-            onClick={saveAndEndSession}
+            onClick={saveAttendanceOnly}
             disabled={saving || students.length === 0}
-            className="flex items-center gap-1 rounded-lg bg-brand-600 hover:bg-brand-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white text-xs font-semibold px-2.5 py-1.5 shadow-brand transition-colors"
+            title="Session চালু রেখে এখন পর্যন্ত মার্ক করা attendance সংরক্ষণ করুন"
+            className="flex items-center gap-1 rounded-lg bg-brand-50 hover:bg-brand-100 disabled:bg-slate-100 disabled:cursor-not-allowed text-brand-700 text-xs font-semibold px-2.5 py-1.5 transition-colors"
           >
             {saving ? <div className="spinner spinner-sm" /> : <Icon name="check" size={12} />}
-            Submit Attendance
+            Save
           </button>
         </div>
       </div>
+
+     
+     
 
       <div className="bg-white border-b border-slate-200 px-4 py-3 flex flex-col sm:flex-row gap-2.5">
         <div className="relative flex-1">
@@ -339,17 +361,22 @@ export default function TeacherTakeAttendance() {
         not sticky/fixed. It naturally moves down as more students are added, and can
         never end up hidden behind the app's fixed .bottom-nav.
       */}
-      <div className="bg-white border-t border-slate-200 px-4 py-3">
+      <div className="bg-white border-t border-slate-200 px-4 py-3 flex gap-2">
         <button
-          onClick={saveAndEndSession}
+          onClick={saveAttendanceOnly}
           disabled={saving || students.length === 0}
-          className="w-full flex items-center justify-center gap-2 rounded-lg bg-brand-600 hover:bg-brand-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white text-sm font-semibold py-2.5 shadow-brand transition-colors"
+          className="flex-1 flex items-center justify-center gap-2 rounded-lg border border-brand-200 bg-brand-50 hover:bg-brand-100 disabled:bg-slate-100 disabled:cursor-not-allowed text-brand-700 text-sm font-semibold py-2.5 transition-colors"
         >
-          {saving ? (
-            <><div className="spinner spinner-sm" /> সংরক্ষণ হচ্ছে...</>
-          ) : (
-            <><Icon name="check" size={14} /> Attendance সংরক্ষণ ও Session শেষ</>
-          )}
+          {saving ? <div className="spinner spinner-sm" /> : <Icon name="check" size={14} />}
+          Attendance Save করুন
+        </button>
+        <button
+          onClick={endSession}
+          disabled={saving || students.length === 0}
+          className="flex-1 flex items-center justify-center gap-2 rounded-lg bg-red-600 hover:bg-red-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white text-sm font-semibold py-2.5 shadow-brand transition-colors"
+        >
+          {saving ? <div className="spinner spinner-sm" /> : <Icon name="stop" size={14} />}
+          Session End করুন
         </button>
       </div>
     </div>
