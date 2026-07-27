@@ -253,8 +253,15 @@ export default function TeacherTakeAttendance() {
         </div>
       </div>
 
-     
-     
+      {/* FIX (Requirement: explicit End Session button + warning while a
+          session is active): this used to be a single combined "Save &
+          End" button, so there was no way to save progress mid-class
+          without immediately closing the session. Now there are two clearly
+          separate actions. */}
+      <div className="bg-amber-50 border-b border-amber-100 px-4 py-2 flex items-center gap-2 text-xs text-amber-800">
+        <Icon name="alert" size={14} />
+        <span>Session চলছে — আগে Attendance Save করুন অথবা Session End করুন, তারপর অন্য পেজে যান।</span>
+      </div>
 
       <div className="bg-white border-b border-slate-200 px-4 py-3 flex flex-col sm:flex-row gap-2.5">
         <div className="relative flex-1">

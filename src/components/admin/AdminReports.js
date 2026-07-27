@@ -17,6 +17,62 @@ function groupBySection(items) {
   return Object.keys(groups).sort().map(key => ({ section: key, items: groups[key] }));
 }
 
+// ── FIX (Search Box Focus Issue) ────────────────────────────────────────
+// SearchBox, DownloadButtons, and SectionHeading used to be defined INSIDE
+// the AdminReports function body. That meant every time state changed
+// (e.g. typing a single character into the search box, which calls
+// setSubjectSearch and re-renders AdminReports), JavaScript created a
+// brand-new SearchBox *function* on that render — a different component
+// type than the one from the previous render, even though it looks
+// identical. React has no way to know it's "the same" component across
+// renders in that situation, so it unmounts the old <input> DOM node and
+// mounts a fresh one in its place. A freshly-mounted input always starts
+// unfocused — which is exactly why the search box lost focus after every
+// single keystroke, forcing a re-click before typing the next character.
+//
+// The fix is simply moving these component definitions to module scope
+// (outside AdminReports), so they're the same stable function/component
+// identity across every re-render, and React correctly reuses the existing
+// DOM node (and its focus) instead of recreating it.
+function SearchBox({ value, onChange, placeholder }) {
+  return (
+    <div style={{ position: 'relative', marginBottom: 14 }}>
+      <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--txt3)' }}>
+        <Icon name="search" size={15} />
+      </span>
+      <input
+        type="text"
+        className="form-input"
+        placeholder={placeholder}
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        style={{ paddingLeft: 36 }}
+      />
+    </div>
+  );
+}
+
+function SectionHeading({ label }) {
+  return (
+    <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--txt2)', background: 'var(--bg3)', padding: '6px 12px', borderRadius: 8, margin: '10px 0 6px' }}>
+      Group: {label}
+    </div>
+  );
+}
+
+function DownloadButtons({ id, endpoint, baseName, downloadingId, onDownload }) {
+  return (
+    <div style={{ display: 'flex', gap: 6 }}>
+      <button className="btn-secondary btn-sm" onClick={() => onDownload(endpoint, id, 'excel', `${baseName}.xlsx`)} disabled={downloadingId === `${id}-excel`}>
+        {downloadingId === `${id}-excel` ? <div className="spinner spinner-sm" /> : <><Icon name="download" size={14} /> Excel</>}
+      </button>
+      <button className="btn-secondary btn-sm" onClick={() => onDownload(endpoint, id, 'pdf', `${baseName}.pdf`)} disabled={downloadingId === `${id}-pdf`}>
+        {downloadingId === `${id}-pdf` ? <div className="spinner spinner-sm" /> : <><Icon name="download" size={14} /> PDF</>}
+      </button>
+    </div>
+  );
+}
+
 export default function AdminReports() {
   const [subjects, setSubjects] = useState([]);
   const [sessions, setSessions] = useState([]);
@@ -91,40 +147,7 @@ export default function AdminReports() {
     finally { setDownloadingId(null); }
   };
 
-  const DownloadButtons = ({ id, endpoint, baseName }) => (
-    <div style={{ display: 'flex', gap: 6 }}>
-      <button className="btn-secondary btn-sm" onClick={() => download(endpoint, id, 'excel', `${baseName}.xlsx`)} disabled={downloadingId === `${id}-excel`}>
-        {downloadingId === `${id}-excel` ? <div className="spinner spinner-sm" /> : <><Icon name="download" size={14} /> Excel</>}
-      </button>
-      <button className="btn-secondary btn-sm" onClick={() => download(endpoint, id, 'pdf', `${baseName}.pdf`)} disabled={downloadingId === `${id}-pdf`}>
-        {downloadingId === `${id}-pdf` ? <div className="spinner spinner-sm" /> : <><Icon name="download" size={14} /> PDF</>}
-      </button>
-    </div>
-  );
-
   if (loading) return <div className="loading"><div className="spinner" /></div>;
-
-  const SearchBox = ({ value, onChange, placeholder }) => (
-    <div style={{ position: 'relative', marginBottom: 14 }}>
-      <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--txt3)' }}>
-        <Icon name="search" size={15} />
-      </span>
-      <input
-        type="text"
-        className="form-input"
-        placeholder={placeholder}
-        value={value}
-        onChange={e => onChange(e.target.value)}
-        style={{ paddingLeft: 36 }}
-      />
-    </div>
-  );
-
-  const SectionHeading = ({ label }) => (
-    <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--txt2)', background: 'var(--bg3)', padding: '6px 12px', borderRadius: 8, margin: '10px 0 6px' }}>
-      Group: {label}
-    </div>
-  );
 
   return (
     <div className="page">
@@ -156,7 +179,7 @@ export default function AdminReports() {
                       <div className="item-title">{s.name} ({s.code})</div>
                       <div className="item-sub">{s.departmentId?.name} • Sem {s.semester} • Group {s.section}</div>
                     </div>
-                    <DownloadButtons id={s._id} endpoint={`/reports/subject/${s._id}`} baseName={`subject_${s.code}_report`} />
+                    <DownloadButtons id={s._id} endpoint={`/reports/subject/${s._id}`} baseName={`subject_${s.code}_report`} downloadingId={downloadingId} onDownload={download} />
                   </div>
                 ))}
               </div>
@@ -182,7 +205,7 @@ export default function AdminReports() {
                       <div className="item-title">{s.subjectId?.name} — Group {s.section}</div>
                       <div className="item-sub">{new Date(s.date).toLocaleDateString()} • {s.presentCount}/{s.totalStudents}</div>
                     </div>
-                    <DownloadButtons id={s._id} endpoint={`/reports/class/${s._id}`} baseName={`session_report`} />
+                    <DownloadButtons id={s._id} endpoint={`/reports/class/${s._id}`} baseName={`session_report`} downloadingId={downloadingId} onDownload={download} />
                   </div>
                 ))}
               </div>
@@ -208,7 +231,7 @@ export default function AdminReports() {
                       <div className="item-title">{s.name}</div>
                       <div className="item-sub">{s.studentId} • {s.departmentId?.name} • Sem {s.semester} Group {s.section}</div>
                     </div>
-                    <DownloadButtons id={s._id} endpoint={`/reports/student/${s._id}`} baseName={`student_${s.studentId}_report`} />
+                    <DownloadButtons id={s._id} endpoint={`/reports/student/${s._id}`} baseName={`student_${s.studentId}_report`} downloadingId={downloadingId} onDownload={download} />
                   </div>
                 ))}
               </div>
