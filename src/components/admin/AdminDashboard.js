@@ -30,12 +30,37 @@ function AnimatedNumber({ value, duration = 700 }) {
   return display;
 }
 
+// Returns the current hour in Bangladesh time (UTC+6), regardless of
+// the server's or browser's own timezone.
+function getBangladeshHour(date) {
+  const bdString = date.toLocaleString('en-US', { timeZone: 'Asia/Dhaka', hour12: false, hour: '2-digit' });
+  return parseInt(bdString, 10) % 24;
+}
+
+// Returns { text, icon } based on current hour (Bangladesh time).
+function getGreeting(hour) {
+  if (hour < 5) return { text: 'শুভ রাত্রি', icon: 'moon' };
+  if (hour < 12) return { text: 'সুপ্রভাত', icon: 'sun' };
+  if (hour < 16) return { text: 'শুভ দুপুর', icon: 'sun' };
+  if (hour < 19) return { text: 'শুভ বিকাল', icon: 'sunset' };
+  return { text: 'শুভ সন্ধ্যা', icon: 'moon' };
+}
+
+const BN_WEEKDAYS = ['রবিবার', 'সোমবার', 'মঙ্গলবার', 'বুধবার', 'বৃহস্পতিবার', 'শুক্রবার', 'শনিবার'];
+const BN_MONTHS = ['জানুয়ারি', 'ফেব্রুয়ারি', 'মার্চ', 'এপ্রিল', 'মে', 'জুন', 'জুলাই', 'আগস্ট', 'সেপ্টেম্বর', 'অক্টোবর', 'নভেম্বর', 'ডিসেম্বর'];
+
+function formatBanglaDate(d) {
+  return `${BN_WEEKDAYS[d.getDay()]}, ${d.getDate()} ${BN_MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+}
+
 export default function AdminDashboard() {
   const [stats, setStats] = useState({ students: 0, teachers: 0, subjects: 0, sessions: 0 });
   const [recentSessions, setRecentSessions] = useState([]);
   const [activeSessions, setActiveSessions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [endingId, setEndingId] = useState(null);
+  const [now, setNow] = useState(new Date());
+  const [adminName, setAdminName] = useState('');
 
   const handleEndSession = async (id) => {
     if (!confirm('এই session টা এখনই End করবেন? এর ফলে যারা এখনো attendance দেয়নি তারা absent হয়ে যাবে।')) return;
@@ -50,6 +75,24 @@ export default function AdminDashboard() {
       setEndingId(null);
     }
   };
+
+  useEffect(() => {
+    // Keep the greeting/time fresh without a full page reload.
+    const timer = setInterval(() => setNow(new Date()), 60 * 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('user');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        setAdminName(parsed?.name || parsed?.fullName || '');
+      }
+    } catch {
+      // ignore — greeting just falls back to a generic label
+    }
+  }, []);
 
   useEffect(() => {
     Promise.all([
@@ -79,6 +122,8 @@ export default function AdminDashboard() {
     { key: 'sessions', label: 'Sessions', icon: 'clipboard', cls: 'stat-purple', value: stats.sessions },
   ];
 
+  const greeting = getGreeting(getBangladeshHour(now));
+
   return (
     <div className="page rp-dash">
       <style>{`
@@ -87,6 +132,30 @@ export default function AdminDashboard() {
         @keyframes rpPulseRing { 0% { transform: scale(0.6); opacity: 0.8; } 100% { transform: scale(1.9); opacity: 0; } }
 
         .rp-dash .rp-anim-field { animation: rpFadeUp .45s cubic-bezier(.16,1,.3,1) both; }
+
+        /* Greeting banner */
+        .rp-dash .rp-greet {
+          display: flex; align-items: center; gap: 14px;
+          padding: 18px 20px; border-radius: 14px; margin-bottom: 20px;
+          background: linear-gradient(135deg, var(--primary, #4f46e5) 0%, var(--primary-dark, #4338ca) 100%);
+          color: #fff; position: relative; overflow: hidden;
+        }
+        .rp-dash .rp-greet::after {
+          content: ''; position: absolute; inset: 0;
+          background: radial-gradient(circle at 85% -20%, rgba(255,255,255,0.25), transparent 55%);
+          pointer-events: none;
+        }
+        .rp-dash .rp-greet-logo {
+          width: 46px; height: 46px; border-radius: 12px; flex-shrink: 0;
+          background: rgba(255,255,255,0.18); backdrop-filter: blur(4px);
+          display: flex; align-items: center; justify-content: center;
+          font-size: 20px; font-weight: 700;
+        }
+        .rp-dash .rp-greet-text { position: relative; z-index: 1; }
+        .rp-dash .rp-greet-title { font-size: 17px; font-weight: 700; line-height: 1.3; display: flex; align-items: center; gap: 8px; }
+        .rp-dash .rp-greet-name { opacity: 0.95; }
+        .rp-dash .rp-greet-sub { font-size: 12.5px; opacity: 0.85; margin-top: 2px; }
+        .rp-dash .rp-greet-icon { display: inline-flex; }
 
         .rp-dash .rp-stat-card { transition: transform .22s cubic-bezier(.34,1.56,.64,1), box-shadow .22s ease; }
         .rp-dash .rp-stat-card:hover { transform: translateY(-3px); box-shadow: 0 10px 22px -12px rgba(0,0,0,0.25); }
@@ -120,9 +189,27 @@ export default function AdminDashboard() {
             animation: none !important; transition: none !important;
           }
         }
+
+        @media (max-width: 480px) {
+          .rp-dash .rp-greet { padding: 14px 16px; gap: 10px; }
+          .rp-dash .rp-greet-logo { width: 38px; height: 38px; font-size: 16px; }
+          .rp-dash .rp-greet-title { font-size: 15px; }
+        }
       `}</style>
 
-      <div className="page-header rp-anim-field" style={{ animationDelay: '0ms' }}>
+      <div className="rp-greet rp-anim-field" style={{ animationDelay: '0ms' }}>
+        <div className="rp-greet-logo">AD</div>
+        <div className="rp-greet-text">
+          <div className="rp-greet-title">
+            <span className="rp-greet-icon"><Icon name={greeting.icon} size={18} /></span>
+            <span>{greeting.text},</span>
+            <span className="rp-greet-name">{adminName || 'Admin'}</span>
+          </div>
+          <div className="rp-greet-sub">{formatBanglaDate(now)}</div>
+        </div>
+      </div>
+
+      <div className="page-header rp-anim-field" style={{ animationDelay: '40ms' }}>
         <h2 className="page-title">Admin Dashboard</h2>
         <p className="page-sub">System overview এবং সামগ্রিক পরিসংখ্যান</p>
       </div>
