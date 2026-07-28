@@ -17,6 +17,7 @@
     "bcryptjs": "^2.4.3",
     "dotenv": "^17.4.2",
     "exceljs": "^4.3.0",
+    "framer-motion": "^12.42.2",
     "html5-qrcode": "^2.3.8",
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.0.3",
