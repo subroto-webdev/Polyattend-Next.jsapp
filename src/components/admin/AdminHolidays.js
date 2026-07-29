@@ -1,5 +1,6 @@
 'use client';
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom'; // ← ১. এটা যোগ করো
 import api from '@/utils/api';
 import Icon from '@/components/common/Icon';
 import toast from 'react-hot-toast';
@@ -74,7 +75,9 @@ export default function AdminHolidays() {
           </div>
         )}
       </div>
-      {showModal && (
+
+      {/* ← ২. মডালটাকে createPortal দিয়ে wrap করো */}
+      {showModal && createPortal(
         <div className="modal-backdrop" onClick={e => e.target === e.currentTarget && setShowModal(false)}>
           <div className="modal-sheet">
             <div className="modal-handle" />
@@ -98,7 +101,8 @@ export default function AdminHolidays() {
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
